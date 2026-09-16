@@ -601,7 +601,110 @@
     if (week) renderWeek(); else { renderScheduleList(); syncZoomButton(0, null); }
   }
 
+  /* ============================================================
+     Next up — the class you're in or heading to, at a glance
+     ============================================================ */
+  function inHowLong(mins) {
+    if (mins <= 0) return 'starting now';
+    if (mins < 60) return 'in ' + mins + ' min';
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return 'in ' + h + 'h' + (m ? ' ' + m + 'm' : '');
+  }
+
+  // what's happening now (if anything) and the next class after it, looking up to a week ahead
+  function findNextUp(now) {
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const today = now.getDay();
+    const byDay = (d) => state.classes.filter((c) => c.day === d)
+      .sort((a, b) => minsOf(a.start) - minsOf(b.start));
+    const todays = byDay(today);
+    const current = todays.find((c) => minsOf(c.start) <= nowMin && nowMin < minsOf(c.end)) || null;
+    let next = null, offset = 0;
+    const later = todays.find((c) => minsOf(c.start) > nowMin && c !== current);
+    if (later) { next = later; }
+    else {
+      for (let off = 1; off <= 7; off++) {
+        const list = byDay((today + off) % 7);
+        if (list.length) { next = list[0]; offset = off; break; }
+      }
+    }
+    return { current: current, next: next, offset: offset, nowMin: nowMin };
+  }
+
+  let nextUpKey = '';
+  function renderNextUp() {
+    const host = $('#next-up');
+    if (!host) return;
+    if (!state.classes.length) { host.hidden = true; host.innerHTML = ''; nextUpKey = ''; return; }
+    const info = findNextUp(new Date());
+    const c = info.current || info.next;
+    if (!c) { host.hidden = true; nextUpKey = ''; return; }
+
+    let eyebrow, tone, progress = null, targetDay;
+    if (info.current) {
+      const left = minsOf(c.end) - info.nowMin;
+      eyebrow = 'Now · ends ' + inHowLong(left);
+      tone = 'is-now';
+      const span = minsOf(c.end) - minsOf(c.start);
+      progress = Math.max(0, Math.min(100, Math.round((info.nowMin - minsOf(c.start)) / span * 100)));
+      targetDay = c.day;
+    } else if (info.offset === 0) {
+      const until = minsOf(c.start) - info.nowMin;
+      eyebrow = 'Next up · ' + inHowLong(until);
+      tone = until <= 15 ? 'is-soon' : 'is-later';
+      targetDay = c.day;
+    } else {
+      const dayName = info.offset === 1 ? 'Tomorrow' : (info.offset === 7 ? 'Next ' + DAYS[c.day] : DAYS[c.day]);
+      eyebrow = dayName + ' · ' + fmtTime(c.start);
+      tone = 'is-later';
+      targetDay = c.day;
+    }
+
+    const meta = [];
+    if (c.location) meta.push('<span class="meta-txt">' + I.pin + esc(c.location) + '</span>');
+    meta.push('<span class="meta-txt tnum">' + I.clock + fmtTime(c.start) + '–' + fmtTime(c.end) + '</span>');
+    if (c.instructor) meta.push('<span class="meta-txt">' + I.user + esc(c.instructor) + '</span>');
+
+    // while in a class, also say what comes right after it today
+    let then = '';
+    if (info.current && info.next && info.offset === 0) {
+      const n = info.next;
+      then = '<span class="nextup-then">Then ' + esc(n.title || n.course) + ' ' + KIND_LABEL[n.kind].toLowerCase() +
+        ' at ' + fmtTime(n.start) + (n.location ? ' · ' + esc(n.location) : '') + '</span>';
+    }
+
+    const title = c.title || c.course;
+    const html =
+      '<span class="nextup-body">' +
+        '<span class="nextup-eyebrow">' + esc(eyebrow) + '</span>' +
+        '<span class="nextup-title"><span class="nextup-name">' + esc(title) + '</span>' +
+          '<span class="badge ' + KIND_CLASS[c.kind] + '">' + KIND_LABEL[c.kind] + '</span></span>' +
+        '<span class="nextup-meta">' + meta.join('') + '</span>' +
+        then +
+      '</span>' +
+      '<span class="nextup-go" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span>' +
+      (progress !== null ? '<span class="nextup-progress" aria-hidden="true"><span style="width:' + progress + '%"></span></span>' : '');
+    // skip the DOM write when nothing visible changed (the card re-checks every 30s)
+    const key = tone + '|' + c.kind + '|' + targetDay + '|' + html;
+    if (nextUpKey === key && !host.hidden) return;
+    const firstShow = host.hidden || !nextUpKey;
+    const switched = host.dataset.cid && host.dataset.cid !== c.id;
+
+    host.className = 'nextup ' + tone;
+    host.style.setProperty('--edge', KIND_VARS[c.kind].edge);
+    host.dataset.day = targetDay;
+    host.dataset.cid = c.id;
+    nextUpKey = key;
+    host.setAttribute('aria-label', eyebrow + ': ' + title + ', ' + KIND_LABEL[c.kind] +
+      (c.location ? ', ' + c.location : '') + '. Open in schedule.');
+    host.innerHTML = html;
+    host.hidden = false;
+    // a different class took over (one ended / next began): give it a small entrance
+    if (switched && !firstShow && !host.closest('[hidden]')) M.enter(host, { y: 8, blur: 4, scale: 0.99 });
+  }
+
   function renderAll() {
+    renderNextUp();
     renderReminders();
     renderSchedule();
     const codes = Array.from(new Set(state.classes.map((c) => c.course).concat(
@@ -740,6 +843,7 @@
     if (!panel || panel.hidden) return;
     M.panel(panel, dir || 0);
     if (name === 'reminders') {
+      M.enter($('#next-up:not([hidden])'), { y: 10, blur: 4 });
       M.stagger($$('.stat', panel), { y: 10, step: 45, blur: 4 });
       M.stagger($$('#reminder-list .card, #reminder-list .empty', panel), { y: 14, delay: 90 });
       $$('#reminder-list .group-title', panel).forEach((h, i) => M.textEffect(h, { delay: 60 + i * 70 }));
@@ -1018,7 +1122,19 @@
 
     // ---- FAB ----
     M.magnetic($('#fab'));
-    M.spotlight('.card, .stat, .today-strip');
+    M.spotlight('.card, .stat, .today-strip, .nextup');
+
+    // ---- Next up: tap jumps to that day in the schedule ----
+    $('#next-up').addEventListener('click', (e) => {
+      const day = Number(e.currentTarget.dataset.day);
+      if (state.settings.scheduleView === 'week' && !Number.isNaN(day)) {
+        ui.weekMode = 'focus';
+        ui.focusDay = day;
+      }
+      switchTab('schedule');
+      const wrap = $(state.settings.scheduleView === 'week' ? '#schedule-week' : '#schedule-list');
+      if (wrap) wrap.scrollIntoView({ block: 'start', behavior: M.ok() ? 'smooth' : 'auto' });
+    });
     $('#fab').addEventListener('click', () => {
       if (ui.tab === 'schedule') openClass(null); else openReminder(null);
     });
@@ -1118,6 +1234,10 @@
     registerOffline();
     // keep "now" markers honest without re-rendering constantly
     setInterval(() => { if (ui.tab === 'schedule') renderSchedule(); }, 60000);
+    // Next up counts down in minutes; also refresh the moment you come back to the app
+    setInterval(() => { if (!document.hidden) renderNextUp(); }, 30000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) renderNextUp(); });
+    window.addEventListener('pageshow', renderNextUp);
   }
 
   /* ---------- offline (sw.js) ---------- */

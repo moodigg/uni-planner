@@ -27,8 +27,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=Caveat:wght@500..700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="styles.css?v=10">
-<link rel="stylesheet" href="themes.css?v=10">
+<link rel="stylesheet" href="styles.css?v=11">
+<link rel="stylesheet" href="themes.css?v=11">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -83,6 +83,8 @@
 <main id="main">
   <!-- ============ REMINDERS ============ -->
   <section id="panel-reminders" role="tabpanel" aria-labelledby="tab-reminders" tabindex="-1">
+    <button type="button" class="nextup" id="next-up" hidden></button>
+
     <form class="capture" id="capture-form" autocomplete="off">
       <label class="capture-label" for="capture-input">Quick capture</label>
       <div class="capture-row">
@@ -293,7 +295,7 @@
 <input type="file" id="import-file" accept="application/json,.json" hidden>
 <div class="toast-region" id="toast-region" role="status" aria-live="polite"></div>
 
-<script src="motion.js?v=10"></script>
-<script src="app.js?v=10"></script>
+<script src="motion.js?v=11"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

@@ -203,6 +203,17 @@ html[data-style="paper"] .btn-ghost:hover { background: var(--hover-ind-bg); bor
 html[data-style="paper"] .btn.danger { border-color: transparent; }
 html[data-style="paper"] .fab { border-radius: var(--r-md); box-shadow: 0 2px 0 rgba(0, 0, 0, .18), 0 14px 24px -12px rgba(40, 30, 10, .5); }
 
+/* --- next up: a pinned note --- */
+html[data-style="paper"] .nextup { border-radius: var(--r-sm); border-left-width: 5px; }
+html[data-style="paper"] .nextup-eyebrow { font-family: var(--font-hand); font-size: 22px; font-weight: 700; line-height: 1; letter-spacing: 0; text-transform: none; color: var(--fg); }
+html[data-style="paper"] .nextup.is-now .nextup-eyebrow { color: var(--primary); }
+html[data-style="paper"] .nextup.is-soon .nextup-eyebrow { color: var(--accent); }
+html[data-style="paper"] .nextup-name { font-size: 20px; font-weight: 600; }
+html[data-style="paper"] .nextup-then { font-family: var(--font-head); font-style: italic; font-size: 15px; }
+html[data-style="paper"] .nextup-progress { background: var(--hl-grey); height: 4px; }
+html[data-style="paper"] .nextup-progress > span { background: var(--hl-yellow); box-shadow: inset 0 -1px 0 rgba(0,0,0,.08); }
+html[data-style="paper"][data-theme="dark"] .nextup-progress > span { background: var(--primary); }
+
 /* --- stats: index cards --- */
 html[data-style="paper"] .stat { border-radius: var(--r-sm); border-top: 3px solid var(--border-strong); box-shadow: var(--shadow); }
 html[data-style="paper"] .stat-n { font-size: 32px; font-weight: 600; letter-spacing: -0.02em; }
@@ -505,6 +516,7 @@ html[data-style="glass"] .capture,
 html[data-style="glass"] .stat,
 html[data-style="glass"] .card,
 html[data-style="glass"] .today-strip,
+html[data-style="glass"] .nextup,
 html[data-style="glass"] .week-wrap,
 html[data-style="glass"] .empty,
 html[data-style="glass"] .menu,
@@ -544,6 +556,7 @@ html[data-style="glass"] .capture,
 html[data-style="glass"] .stat,
 html[data-style="glass"] .card,
 html[data-style="glass"] .today-strip,
+html[data-style="glass"] .nextup,
 html[data-style="glass"] .week-wrap,
 html[data-style="glass"] .empty {
   background: var(--card);
@@ -566,20 +579,31 @@ html[data-style="glass"] .stat-n { font-weight: 800; }
 html[data-style="glass"] .card,
 html[data-style="glass"] .stat,
 html[data-style="glass"] .capture,
-html[data-style="glass"] .today-strip { position: relative; overflow: hidden; }
+html[data-style="glass"] .today-strip,
+html[data-style="glass"] .nextup { position: relative; overflow: hidden; }
 html[data-style="glass"] .card::after,
 html[data-style="glass"] .stat::after,
-html[data-style="glass"] .today-strip::after {
+html[data-style="glass"] .today-strip::after,
+html[data-style="glass"] .nextup::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
   background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), var(--spot), transparent 65%);
   opacity: 0; transition: opacity 250ms ease;
 }
 html[data-style="glass"] .card:hover::after,
 html[data-style="glass"] .stat:hover::after,
-html[data-style="glass"] .today-strip:hover::after { opacity: 1; }
+html[data-style="glass"] .today-strip:hover::after,
+html[data-style="glass"] .nextup:hover::after { opacity: 1; }
 html[data-style="glass"] .card > *,
 html[data-style="glass"] .stat > *,
-html[data-style="glass"] .today-strip > * { position: relative; z-index: 1; }
+html[data-style="glass"] .today-strip > *,
+html[data-style="glass"] .nextup > :not(.nextup-progress) { position: relative; z-index: 1; }
+html[data-style="glass"] .nextup { border-left: 1px solid var(--border); border-radius: var(--r-lg); }
+html[data-style="glass"] .nextup::before {
+  content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--edge); box-shadow: 0 0 12px var(--edge);
+}
+html[data-style="glass"] .nextup-progress { background: rgba(127, 127, 160, .18); z-index: 2; }
+html[data-style="glass"] .nextup-progress > span { background: linear-gradient(90deg, var(--grad-a), var(--grad-b)); }
 
 /* --- quick capture + BorderTrail (Motion Primitives) while focused --- */
 @property --trail-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }

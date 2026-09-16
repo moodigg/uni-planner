@@ -6,6 +6,17 @@ Open `index.html` in a browser. No build step, no install, no account. Everythin
 is stored in that browser's `localStorage` under the key `uniplanner.v1` — nothing
 is sent anywhere.
 
+## Next up
+
+The card at the top of the Reminders tab shows the class you're in or heading to:
+
+- **During a class** — "Now · ends in 20 min", room, a progress bar, and what's after it today.
+- **Before a class** — "Next up · in 25 min" (turns orange inside 15 minutes).
+- **Done for the day** — "Tomorrow · 8:30am" or the weekday of your next class.
+
+It updates every 30 seconds and the moment you switch back to the app. Tap it to
+jump to that day in the Schedule. It's hidden until you've added classes.
+
 ## Reminders tab
 
 Quick capture parses plain text, so you can type it the way the lecturer said it:

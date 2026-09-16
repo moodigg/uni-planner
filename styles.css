@@ -273,6 +273,37 @@ section[role="tabpanel"]:focus { outline: none; }
 .capture-preview { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3);
   padding-top: var(--sp-3); border-top: 1px dashed var(--border); }
 
+/* ============================ next up ============================ */
+
+.nextup {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%; margin: 0 0 var(--sp-4); padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+  text-align: left; font: inherit; color: var(--fg); cursor: pointer;
+  background: var(--card); border: 1px solid var(--border);
+  border-left: 4px solid var(--edge, var(--primary));
+  border-radius: var(--r-lg); box-shadow: var(--shadow);
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.nextup:hover { background: var(--card-hover); }
+.nextup-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.nextup-eyebrow {
+  font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--fg-muted); font-variant-numeric: tabular-nums;
+}
+.nextup.is-now .nextup-eyebrow { color: var(--primary); }
+.nextup.is-soon .nextup-eyebrow { color: var(--accent); }
+.nextup-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.nextup-name { font-family: var(--font-head); font-size: 17px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.25; }
+.nextup-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.nextup-then { font-size: 13px; color: var(--fg-muted); }
+.nextup-then::before { content: "\21B3\00A0"; color: var(--fg-faint); }
+.nextup-go { flex: none; display: grid; place-items: center; width: 28px; height: 28px; color: var(--fg-faint); }
+.nextup-go svg { width: 18px; height: 18px; transition: transform var(--fast) var(--ease); }
+.nextup:hover .nextup-go svg { transform: translateX(2px); }
+.nextup-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: color-mix(in srgb, var(--primary) 18%, transparent); }
+.nextup-progress > span { display: block; height: 100%; background: var(--primary); border-radius: 0 3px 3px 0; transition: width 600ms var(--ease); }
+
 /* ============================ buttons ============================ */
 
 .btn {

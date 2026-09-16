@@ -69,6 +69,20 @@ highlight, staggered blur-in for new items, counting numbers, letter-by-letter
 headings, springy dialogs, magnetic **New** button. It turns itself off when the
 device asks for reduced motion, and data is always saved before any animation runs.
 
+## Offline & home screen
+
+After the first visit with internet, the app works fully offline: it opens,
+and adding, editing, themes and the schedule all work with no connection,
+including after a phone restart. The first time it's ready a small
+"Ready to use offline" message appears.
+
+Install it like an app: **iPhone (Safari)** Share → Add to Home Screen;
+**Android (Chrome)** ⋮ → Add to Home screen / Install app.
+
+- Updates download quietly in the background and apply the next time you open it.
+- iPhone only: the home-screen app and the Safari tab keep separate data —
+  export a backup from one and import it into the other once.
+
 ## Data
 
 The `⋮` menu exports a `.json` backup and imports it back. Do this before
@@ -102,8 +116,15 @@ index.html   markup, dialogs, theme applied before first paint
 styles.css   Classic tokens + all components
 themes.css   Paper and Glass (light + dark each)
 motion.js    animation layer (no dependencies)
+sw.js        offline support (service worker)
+manifest.webmanifest, icons/   home-screen app name + icons
 app.js       state, localStorage, the text parser, rendering
 ```
 
 Colours live only as CSS custom properties in `styles.css` — change a token there
 and it propagates everywhere, including the timetable blocks.
+
+## Deploying an update
+
+Bump `VERSION` in `sw.js` **and** every `?v=` number in `index.html` to the same
+new number, then push. Phones pick it up on their next online open.

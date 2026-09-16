@@ -777,6 +777,10 @@
     document.documentElement.setAttribute('data-style', style);
     const sel = $('#style-select');
     if (sel && sel.value !== style) sel.value = style;
+    // phone status bar / installed-app title bar follows the active theme's background
+    const tc = document.querySelector('meta[name="theme-color"]');
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    if (tc && bg) tc.setAttribute('content', bg);
     // fonts differ per style, so indicator geometry must be re-measured once they land
     refreshIndicators();
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(refreshIndicators);
@@ -1111,8 +1115,28 @@
 
     renderAll();
     revealPanel('reminders', 0);
+    registerOffline();
     // keep "now" markers honest without re-rendering constantly
     setInterval(() => { if (ui.tab === 'schedule') renderSchedule(); }, 60000);
+  }
+
+  /* ---------- offline (sw.js) ---------- */
+  function registerOffline() {
+    if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return;
+    const firstTime = !navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      if (!firstTime) return;
+      const ready = () => {
+        let told = false;
+        try { told = localStorage.getItem('uniplanner.offlineReady') === '1'; } catch (err) { /* ignore */ }
+        if (told) return;
+        try { localStorage.setItem('uniplanner.offlineReady', '1'); } catch (err) { /* ignore */ }
+        toast('Ready to use offline — it now works without internet.');
+      };
+      const worker = reg.installing || reg.waiting;
+      if (!worker) { if (reg.active) ready(); return; }
+      worker.addEventListener('statechange', () => { if (worker.state === 'activated') ready(); });
+    }).catch(() => { /* offline support unavailable; the app still works online */ });
   }
 
   /* ---------- backup ---------- */

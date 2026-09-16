@@ -3,3 +3,5 @@ uni-planner/
 *.zip
 *.json
 _qa*
+!worker/package.json
+!worker/package-lock.json

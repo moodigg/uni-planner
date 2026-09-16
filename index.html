@@ -27,8 +27,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=Caveat:wght@500..700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="styles.css?v=11">
-<link rel="stylesheet" href="themes.css?v=11">
+<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="themes.css?v=12">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -72,6 +72,9 @@
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
       </button>
       <div class="menu" id="menu-data" hidden role="menu" aria-labelledby="btn-data">
+        <button class="menu-item" type="button" role="menuitem" data-action="notify" id="menu-notify" aria-pressed="false">Turn on notifications</button>
+        <button class="menu-item" type="button" role="menuitem" data-action="notify-test" id="menu-notify-test" hidden>Send a test notification</button>
+        <div class="menu-sep" role="separator"></div>
         <button class="menu-item" type="button" role="menuitem" data-action="export">Export backup (.json)</button>
         <button class="menu-item" type="button" role="menuitem" data-action="import">Import backup&hellip;</button>
         <button class="menu-item danger" type="button" role="menuitem" data-action="wipe">Erase all data</button>
@@ -295,7 +298,7 @@
 <input type="file" id="import-file" accept="application/json,.json" hidden>
 <div class="toast-region" id="toast-region" role="status" aria-live="polite"></div>
 
-<script src="motion.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="motion.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

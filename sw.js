@@ -6,7 +6,7 @@
    over quietly, and the new version shows the next time the app opens.
    Your reminders/classes live in localStorage and are never touched here.
    ============================================================ */
-const VERSION = '11';
+const VERSION = '12';
 const SHELL = 'uniplanner-shell-v' + VERSION;
 const FONTS = 'uniplanner-fonts-v1';
 
@@ -42,6 +42,32 @@ self.addEventListener('activate', (event) => {
       .filter((k) => k.startsWith('uniplanner-shell-') && k !== SHELL)
       .map((k) => caches.delete(k)));
     await self.clients.claim();
+  })());
+});
+
+/* ---------- notifications from the push worker ---------- */
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = { title: 'Uni Planner', body: event.data ? event.data.text() : '' }; }
+  const title = data.title || 'Uni Planner';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    tag: data.tag || undefined,
+    renotify: !!data.tag,
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    data: { url: './' }
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const scope = self.registration.scope;
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = wins.find((w) => w.url.startsWith(scope));
+    if (open) return open.focus();
+    return self.clients.openWindow(scope);
   })());
 });
 

@@ -80,6 +80,23 @@ highlight, staggered blur-in for new items, counting numbers, letter-by-letter
 headings, springy dialogs, magnetic **New** button. It turns itself off when the
 device asks for reduced motion, and data is always saved before any animation runs.
 
+## Notifications
+
+Turn them on from the **⋮** menu → **Turn on notifications**, then allow them. A
+test notification arrives straight away. You'll get:
+
+- **Classes** — 15 minutes before each one ("Operating Systems in 15 min · Lecture · A202S").
+- **Deadlines with a time** — the evening before (8pm) and 2 hours before.
+- **Deadlines without a time** — the evening before (8pm) and 9am on the day.
+
+Edits sync automatically (also after being offline). **iPhone:** add the app to
+the Home Screen first and turn notifications on from there (iOS 16.4+).
+
+How it works: the times above are stored on a small Cloudflare Worker (see
+`worker/`) under a random ID; it checks every minute and sends a Web Push.
+Nothing is stored there unless you turn notifications on, and turning them off
+deletes it. Alerts more than 10 minutes late are dropped instead of sent.
+
 ## Offline & home screen
 
 After the first visit with internet, the app works fully offline: it opens,
@@ -139,3 +156,18 @@ and it propagates everywhere, including the timetable blocks.
 
 Bump `VERSION` in `sw.js` **and** every `?v=` number in `index.html` to the same
 new number, then push. Phones pick it up on their next online open.
+
+## Notification worker (`worker/`)
+
+Cloudflare Worker + D1 database + a Durable Object that ticks every minute
+(Cron Triggers never fired on this account, so the cron is only a watchdog).
+
+```
+cd worker
+npm test          # 52 offline tests: encryption, VAPID, time zones, scheduling, API
+npx wrangler deploy
+```
+
+- `VAPID_PRIVATE_JWK` is a Cloudflare secret, never in this repo.
+- `GET /health` shows when the last minute-check ran.
+- Limits: 40 devices, 400 alerts per device, only this site's origin.

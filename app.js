@@ -99,6 +99,7 @@
   function save() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
     catch (e) { toast('Could not save — storage may be full or blocked.'); }
+    if (typeof scheduleSync === 'function') scheduleSync();   // keep notification times in step with edits
   }
 
   /* ============================================================
@@ -950,10 +951,13 @@
     menu.addEventListener('click', (e) => {
       const b = e.target.closest('[data-action]'); if (!b) return;
       menu.hidden = true; menuBtn.setAttribute('aria-expanded', 'false');
+      if (b.dataset.action === 'notify') { if (pushState()) disableNotifications(); else enableNotifications(); }
+      if (b.dataset.action === 'notify-test') testNotification();
       if (b.dataset.action === 'export') exportData();
       if (b.dataset.action === 'import') $('#import-file').click();
       if (b.dataset.action === 'wipe') {
         if (confirm('Erase every reminder and class stored in this browser? This cannot be undone.')) {
+          if (pushState()) disableNotifications(true);
           state = structuredClone(DEFAULTS); save(); applyTheme(); syncChips('data-view', 'week'); renderAll(); toast('All data erased.');
         }
       }
@@ -1232,6 +1236,7 @@
     renderAll();
     revealPanel('reminders', 0);
     registerOffline();
+    initNotifications();
     // keep "now" markers honest without re-rendering constantly
     setInterval(() => { if (ui.tab === 'schedule') renderSchedule(); }, 60000);
     // Next up counts down in minutes; also refresh the moment you come back to the app
@@ -1257,6 +1262,201 @@
       if (!worker) { if (reg.active) ready(); return; }
       worker.addEventListener('statechange', () => { if (worker.state === 'activated') ready(); });
     }).catch(() => { /* offline support unavailable; the app still works online */ });
+  }
+
+  /* ============================================================
+     Notifications (push via the Cloudflare worker in /worker)
+     Credentials live in their own localStorage key, so backups never carry them.
+     ============================================================ */
+  const PUSH_API = 'https://uni-planner-push.uni-planner-push.workers.dev';
+  const VAPID_PUBLIC_KEY = 'BAFbD9C7iLMqkxCot3ZSw8tKhUrEsfZOtS8govOxq4SKsdRHvOfcV1eFtXHO1Qxxc8sbO19f0BASaEVchXlFxgQ';
+  const PUSH_KEY = 'uniplanner.push';
+  const CLASS_LEAD_MIN = 15;
+
+  function pushState() {
+    try { return JSON.parse(localStorage.getItem(PUSH_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function setPushState(v) {
+    try { if (v) localStorage.setItem(PUSH_KEY, JSON.stringify(v)); else localStorage.removeItem(PUSH_KEY); } catch (e) { /* ignore */ }
+  }
+
+  function pushSupport() {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (!('serviceWorker' in navigator) || !/^https?:$/.test(location.protocol)) return { ok: false, why: 'unsupported' };
+    if (ios && !standalone) return { ok: false, why: 'ios-install' };
+    if (!('PushManager' in window) || !('Notification' in window)) return { ok: false, why: 'unsupported' };
+    return { ok: true };
+  }
+
+  function b64urlToBytes(s) {
+    const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4));
+    return Uint8Array.from(b, (c) => c.charCodeAt(0));
+  }
+
+  function localAt(dateStr, minutes) {
+    const p = dateStr.split('-').map(Number);
+    return new Date(p[0], p[1] - 1, p[2], 0, minutes).getTime();
+  }
+
+  // what the server should notify about, derived from the current data
+  function buildPushRules(now) {
+    const rules = [];
+    const cut = (v, n) => (v.length > n ? v.slice(0, n - 1) + '\u2026' : v);
+    state.classes.forEach((c) => {
+      if (!/^\d\d:\d\d$/.test(c.start || '')) return;
+      const name = c.title || c.course;
+      rules.push({
+        kind: 'class', day: c.day, start: minsOf(c.start),
+        title: cut(name + ' in ' + CLASS_LEAD_MIN + ' min', 120),
+        body: cut([KIND_LABEL[c.kind], c.location, fmtTime(c.start)].filter(Boolean).join(' \u00b7 '), 240),
+        tag: cut('class-' + c.id + '-' + c.day + '-' + c.start, 100)
+      });
+    });
+    state.reminders.forEach((r) => {
+      if (r.done || !/^\d{4}-\d\d-\d\d$/.test(r.date || '')) return;
+      const what = [TYPE_LABEL[r.type], r.course].filter(Boolean).join(' \u00b7 ');
+      const when = r.time ? fmtTime(r.time) : 'due';
+      const add = (at, title, body, tag, ttl) => {
+        if (at > now + 60000 && at < now + 390 * 24 * 3600e3) rules.push({ kind: 'once', at, title: cut(title, 120), body: cut(body, 240), tag: cut(tag, 100), ttl });
+      };
+      const key = 'rem-' + r.id + '-' + r.date + (r.time || '');
+      add(localAt(r.date, -4 * 60), 'Tomorrow: ' + r.title, [what, when].filter(Boolean).join(' \u00b7 '), key + '-eve', 4 * 3600);
+      if (r.time) add(localAt(r.date, minsOf(r.time) - 120), 'In 2 hours: ' + r.title, [what, when].filter(Boolean).join(' \u00b7 '), key + '-2h', 2 * 3600);
+      else add(localAt(r.date, 9 * 60), 'Today: ' + r.title, what || 'Due today', key + '-day', 6 * 3600);
+    });
+    return rules.slice(0, 400);
+  }
+
+  async function pushApi(method, path, body) {
+    const res = await fetch(PUSH_API + path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* empty */ }
+    return { status: res.status, data };
+  }
+
+  function timeZone() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { return 'UTC'; }
+  }
+
+  async function currentSubscription(create) {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub && create) {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(VAPID_PUBLIC_KEY) });
+    }
+    return sub;
+  }
+
+  let syncTimer = 0, syncing = false;
+  function scheduleSync(delay) {
+    if (!pushState()) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncPush, delay == null ? 1500 : delay);
+  }
+
+  async function syncPush() {
+    const ps = pushState();
+    if (!ps || syncing) return;
+    if (!navigator.onLine) { ps.pending = true; setPushState(ps); return; }
+    syncing = true;
+    try {
+      if (Notification.permission !== 'granted') {   // user blocked it in settings: tidy up quietly
+        await pushApi('DELETE', '/v1/device', { deviceId: ps.deviceId, token: ps.token }).catch(() => {});
+        setPushState(null); updateNotifyMenu();
+        return;
+      }
+      const rules = buildPushRules(Date.now());
+      const sub = await currentSubscription(true);
+      const fingerprint = JSON.stringify([rules, sub.endpoint, timeZone()]);
+      if (!ps.pending && ps.fingerprint === fingerprint) return;
+      const r = await pushApi('PUT', '/v1/device', { deviceId: ps.deviceId, token: ps.token, tz: timeZone(), rules, subscription: sub.toJSON() });
+      if (r.status === 401) {                          // server forgot this device (e.g. expired): register again
+        const again = await pushApi('POST', '/v1/subscribe', { subscription: sub.toJSON(), tz: timeZone(), rules });
+        if (again.status !== 201) throw new Error('resubscribe ' + again.status);
+        setPushState({ deviceId: again.data.deviceId, token: again.data.token, fingerprint, pending: false });
+      } else if (r.status === 200) {
+        setPushState(Object.assign(ps, { fingerprint, pending: false }));
+      } else {
+        throw new Error('sync ' + r.status);
+      }
+    } catch (err) {
+      const cur = pushState();
+      if (cur) { cur.pending = true; setPushState(cur); }
+    } finally {
+      syncing = false;
+    }
+  }
+
+  async function enableNotifications() {
+    const s = pushSupport();
+    if (!s.ok) {
+      toast(s.why === 'ios-install'
+        ? 'On iPhone: Share \u2192 Add to Home Screen, open the app from there, then turn notifications on.'
+        : "This browser can't show notifications.");
+      return;
+    }
+    if (!navigator.onLine) { toast('Connect to the internet to turn notifications on.'); return; }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      toast(perm === 'denied' ? 'Notifications are blocked \u2014 allow them in your browser or phone settings.' : 'Notifications not turned on.');
+      return;
+    }
+    const item = $('#menu-notify');
+    item.disabled = true; item.textContent = 'Turning on\u2026';
+    try {
+      const sub = await currentSubscription(true);
+      const rules = buildPushRules(Date.now());
+      const r = await pushApi('POST', '/v1/subscribe', { subscription: sub.toJSON(), tz: timeZone(), rules });
+      if (r.status === 503) { toast('Notifications are full right now \u2014 ask the app owner.'); return; }
+      if (r.status !== 201) throw new Error('subscribe ' + r.status);
+      setPushState({ deviceId: r.data.deviceId, token: r.data.token, fingerprint: JSON.stringify([rules, sub.endpoint, timeZone()]), pending: false });
+      toast('Notifications on \u2014 sending a test\u2026');
+      await pushApi('POST', '/v1/test', { deviceId: r.data.deviceId, token: r.data.token }).catch(() => {});
+    } catch (err) {
+      toast("Couldn't turn notifications on. Check your internet and try again.");
+    } finally {
+      item.disabled = false;
+      updateNotifyMenu();
+    }
+  }
+
+  async function disableNotifications(silent) {
+    const ps = pushState();
+    setPushState(null);
+    updateNotifyMenu();
+    try { if (ps) await pushApi('DELETE', '/v1/device', { deviceId: ps.deviceId, token: ps.token }); } catch (e) { /* offline: server drops it when the subscription dies */ }
+    try { const sub = await currentSubscription(false); if (sub) await sub.unsubscribe(); } catch (e) { /* ignore */ }
+    if (!silent) toast('Notifications off.');
+  }
+
+  async function testNotification() {
+    const ps = pushState();
+    if (!ps) return;
+    try {
+      const r = await pushApi('POST', '/v1/test', { deviceId: ps.deviceId, token: ps.token });
+      if (r.status === 429) toast('Wait a few seconds before testing again.');
+      else if (r.status === 401) { toast('Reconnecting notifications\u2026'); ps.pending = true; setPushState(ps); scheduleSync(0); }
+      else if (r.status !== 200) toast("Test couldn't be sent. Try again in a minute.");
+      else toast('Test sent \u2014 it should appear in a few seconds.');
+    } catch (e) {
+      toast('No internet \u2014 try the test again when online.');
+    }
+  }
+
+  function updateNotifyMenu() {
+    const on = !!pushState();
+    const item = $('#menu-notify'), test = $('#menu-notify-test');
+    if (!item) return;
+    item.textContent = on ? 'Turn off notifications' : 'Turn on notifications';
+    item.setAttribute('aria-pressed', on ? 'true' : 'false');
+    test.hidden = !on;
+  }
+
+  function initNotifications() {
+    updateNotifyMenu();
+    window.addEventListener('online', () => { const ps = pushState(); if (ps && ps.pending) scheduleSync(0); });
+    if (pushState() && navigator.onLine && 'serviceWorker' in navigator) scheduleSync(2500);
   }
 
   /* ---------- backup ---------- */

@@ -240,6 +240,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .menu-item:hover { background: var(--card-hover); }
 .menu-item.danger { color: var(--danger); }
+.menu-item:disabled { opacity: .6; cursor: progress; }
+.menu-sep { height: 1px; margin: var(--sp-1) var(--sp-2); background: var(--border); }
 
 /* ============================ layout ============================ */
 

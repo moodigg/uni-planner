@@ -1,0 +1,16 @@
+{
+  "name": "uni-planner-push",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Push notifications for Uni Planner (Cloudflare Worker + D1)",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "test": "node test/run.mjs"
+  },
+  "devDependencies": {
+    "http_ece": "^1.2.1",
+    "wrangler": "^4.132.0"
+  }
+}

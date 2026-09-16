@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "uni-planner-push",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "triggers": { "crons": ["* * * * *"] },
+  "durable_objects": {
+    "bindings": [ { "name": "TICKER", "class_name": "Ticker" } ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Ticker"] }
+  ],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "uni-planner-push", "database_id": "d9281aea-2c0b-4336-8b07-b0679911ff4f" }
+  ],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://moodigg.github.io",
+    "VAPID_PUBLIC_KEY": "BAFbD9C7iLMqkxCot3ZSw8tKhUrEsfZOtS8govOxq4SKsdRHvOfcV1eFtXHO1Qxxc8sbO19f0BASaEVchXlFxgQ",
+    "VAPID_SUBJECT": "https://moodigg.github.io/uni-planner/"
+  }
+  // secret (not in this file): VAPID_PRIVATE_JWK  ->  wrangler secret put VAPID_PRIVATE_JWK
+}

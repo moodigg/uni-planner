@@ -46,6 +46,11 @@ days at once and it creates one entry per day.
 - **Week grid** — real time proportions, colour-coded by session type, today's
   column tinted with a live "now" line.
 - **Day list** — the same data as cards; better on a phone.
+- **Zoom** — on phones the week starts zoomed out so every class fits one screen,
+  labelled with short names (Object Oriented Programming → OOP). Tap **Zoom in**,
+  a day's header, or any class to widen that day with full details; the other
+  days shrink and blur. Tap the day again, or **Whole week**, to zoom back out.
+  On a PC the grid starts as before and the Zoom button is still there.
 - **Today strip** — today's sessions plus a countdown to the next one.
 
 ## Themes

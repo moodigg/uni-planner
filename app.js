@@ -59,6 +59,8 @@
     const h12 = h % 12 === 0 ? 12 : h % 12;
     return h12 + (mm ? ':' + pad2(mm) : '') + ap;
   }
+  // 12-hour clock without am/pm, for tight spaces where the hour gutter gives context: 13:30 -> 1:30
+  function clock12(hhmm) { const m = minsOf(hhmm); return ((Math.floor(m / 60) % 12) || 12) + ':' + pad2(m % 60); }
   function fmtDate(d) { return DAYS_SHORT[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()]; }
 
   /* ---------- motion (motion.js); no-op stand-in if it failed to load ---------- */
@@ -75,7 +77,7 @@
   /* ---------- state ---------- */
   const DEFAULTS = { reminders: [], classes: [], settings: { theme: null, style: 'classic', scheduleView: 'week' } };
   let state = load();
-  let ui = { tab: 'reminders', filter: 'all', query: '', showDone: false, editing: null, editingClass: null };
+  let ui = { tab: 'reminders', filter: 'all', query: '', showDone: false, editing: null, editingClass: null, weekMode: null, focusDay: null };
   const prevStats = {};
   const indicators = [];
 
@@ -394,6 +396,87 @@
       }).join('') + '</div>';
   }
 
+  /* ---------- week zoom: overview (whole week) <-> focus (one day wide, others blurred) ---------- */
+  const phoneMq = window.matchMedia('(max-width: 640px)');
+  let lastFitHeight = 0;
+
+  // "Object Oriented Programming" -> "OOP", "Physics II" -> "Phys II", no name -> "INT205"
+  function shortName(c) {
+    const code = String(c.course || '').split(/\s+/)[0];
+    if (!c.title) return code;
+    const words = [], suffix = [];
+    c.title.replace(/[()]/g, ' ').split(/[\s\-–—\/&,:.]+/).forEach((w) => {
+      if (!w || /^(of|and|the|to|in|for|a|an|with|on|at)$/i.test(w)) return;
+      if (/^([ivx]{1,4}|\d+)$/i.test(w)) suffix.push(w.toUpperCase()); else words.push(w);
+    });
+    if (!words.length) return code || c.title.slice(0, 5);
+    const base = words.length === 1
+      ? (words[0].length <= 6 ? words[0] : words[0].slice(0, 4))
+      : words.map((w) => w.charAt(0).toUpperCase()).join('').slice(0, 5);
+    return base + (suffix.length ? ' ' + suffix.join(' ') : '');
+  }
+
+  function weekLayout(activeDays) {
+    const phone = phoneMq.matches;
+    const mode = ui.weekMode === 'focus' ? 'focus' : (phone ? 'fit' : 'normal');
+    let focus = ui.focusDay;
+    if (activeDays.indexOf(focus) < 0) {
+      const today = new Date().getDay();
+      focus = activeDays.find((d) => d >= today);
+      if (focus == null) focus = activeDays[0];
+    }
+    return { phone: phone, mode: mode, focus: focus };
+  }
+
+  // explicit track list (same shape in every mode) so the browser can animate between them
+  function weekColumns(activeDays, L) {
+    const big = Math.max(2, Math.round(1.25 * (activeDays.length - 1) * 100) / 100);
+    return (L.phone ? '40px' : '60px') + ' ' + activeDays.map((d) =>
+      'minmax(0px, ' + (L.mode === 'focus' && d === L.focus ? big : 1) + 'fr)').join(' ');
+  }
+
+  function dayState(d, L) {
+    if (L.mode !== 'focus') return '';
+    return d === L.focus ? ' is-focus' : ' is-dim';
+  }
+
+  function syncZoomButton(dayCount, L) {
+    const b = $('#btn-zoom');
+    if (!b) return;
+    b.hidden = state.settings.scheduleView !== 'week' || !dayCount || dayCount < 2;
+    const zoomed = !!L && L.mode === 'focus';
+    b.classList.toggle('is-zoomed', zoomed);
+    b.setAttribute('aria-pressed', zoomed ? 'true' : 'false');
+    $('.zoom-label', b).textContent = zoomed ? 'Whole week' : 'Zoom in';
+  }
+
+  // flip modes on the existing grid (animated); falls back to a full render if the grid can't be reused
+  function applyWeekLayout() {
+    const week = $('#schedule-week .week');
+    if (!week) return false;
+    const activeDays = week.dataset.days.split(',').map(Number);
+    const L = weekLayout(activeDays);
+    if (String(L.phone) !== week.dataset.phone) return false;
+    week.classList.remove('mode-fit', 'mode-normal', 'mode-focus');
+    week.classList.add('mode-' + L.mode);
+    week.style.gridTemplateColumns = weekColumns(activeDays, L);
+    $$('[data-day]', week).forEach((el) => {
+      const d = Number(el.dataset.day);
+      const focused = L.mode === 'focus' && d === L.focus;
+      el.classList.toggle('is-focus', focused);
+      el.classList.toggle('is-dim', L.mode === 'focus' && !focused);
+      if (el.classList.contains('week-dayhead')) el.setAttribute('aria-pressed', focused ? 'true' : 'false');
+    });
+    syncZoomButton(activeDays.length, L);
+    return true;
+  }
+
+  function setWeekFocus(day) {
+    ui.weekMode = day == null ? null : 'focus';
+    if (day != null) ui.focusDay = day;
+    if (!applyWeekLayout()) renderWeek();
+  }
+
   function renderWeek() {
     const host = $('#schedule-week');
     const cls = sortedClasses();
@@ -402,22 +485,29 @@
         'Add each session once &mdash; lecture, lab or tutorial &mdash; with its room and instructor, and the week builds itself.',
         'sample-schedule', 'Load a sample week');
       animateNew(host, '.slot', 'data-class-id');
+      syncZoomButton(0, null);
       return;
     }
 
     const activeDays = [0, 1, 2, 3, 4, 5, 6].filter((d) => cls.some((c) => c.day === d));
+    const L = weekLayout(activeDays);
     let lo = Math.min.apply(null, cls.map((c) => minsOf(c.start)));
     let hi = Math.max.apply(null, cls.map((c) => minsOf(c.end)));
     lo = Math.floor(lo / 60) * 60;
     hi = Math.ceil(hi / 60) * 60;
     const total = Math.max(hi - lo, 120);
-    const ppm = 1.4;
+    // phones: scale the day so the whole grid fits one screen (below the sticky header, above the + button)
+    lastFitHeight = window.innerHeight;
+    const ppm = L.phone
+      ? Math.min(1.4, Math.max(0.5, (window.innerHeight - 60 - 56 - 84) / total))
+      : 1.4;
     const colH = Math.round(total * ppm);
+    const minSlot = L.phone ? 22 : 34;
     const now = new Date();
     const nowMin = now.getHours() * 60 + now.getMinutes();
 
     let gutter = '<div class="week-gutter" style="height:' + colH + 'px">';
-    for (let m = lo; m <= hi; m += 60) {
+    for (let m = lo; m < hi; m += 60) {   // the closing hour label would sit on the grid's bottom edge and get clipped
       gutter += '<span class="hour-label" style="top:' + Math.round((m - lo) * ppm) + 'px">' + fmtTime(pad2(Math.floor(m / 60)) + ':00') + '</span>';
     }
     gutter += '</div>';
@@ -425,38 +515,51 @@
     const heads = activeDays.map((d) => {
       const isToday = d === now.getDay();
       const n = cls.filter((c) => c.day === d).length;
-      return '<div class="week-dayhead' + (isToday ? ' is-today' : '') + '">' +
-        '<div class="d-name">' + DAYS_SHORT[d] + (isToday ? ' · today' : '') + '</div>' +
-        '<div class="d-n tnum">' + n + (n === 1 ? ' session' : ' sessions') + '</div></div>';
+      const st = dayState(d, L);
+      return '<button type="button" class="week-dayhead' + (isToday ? ' is-today' : '') + st + '" data-day="' + d + '"' +
+        ' aria-pressed="' + (st === ' is-focus' ? 'true' : 'false') + '"' +
+        ' aria-label="' + DAYS[d] + (isToday ? ', today' : '') + ', ' + n + (n === 1 ? ' session' : ' sessions') + '. Zoom to this day.">' +
+        '<span class="d-name">' + DAYS_SHORT[d] + (isToday ? '<span class="d-today"> · today</span>' : '') + '</span>' +
+        '<span class="d-n tnum"><span class="d-count">' + n + '</span><span class="d-word">' + (n === 1 ? ' session' : ' sessions') + '</span></span>' +
+        '</button>';
     }).join('');
 
     const cols = activeDays.map((d) => {
       const isToday = d === now.getDay();
       const slots = cls.filter((c) => c.day === d).map((c) => {
         const top = Math.round((minsOf(c.start) - lo) * ppm);
-        const h = Math.max(Math.round((minsOf(c.end) - minsOf(c.start)) * ppm), 34);
+        const h = Math.max(Math.round((minsOf(c.end) - minsOf(c.start)) * ppm), minSlot);
         const v = KIND_VARS[c.kind];
         const showTime = h >= 66, showLoc = h >= 88;
-        return '<button class="slot" type="button" data-kind="' + c.kind + '" data-class-id="' + c.id + '" style="top:' + top + 'px;height:' + h + 'px;--edge:' + v.edge + ';--fill:' + v.fill + '"' +
-          ' aria-label="' + esc(c.course + ' ' + KIND_LABEL[c.kind] + ', ' + fmtTime(c.start) + ' to ' + fmtTime(c.end) +
-            (c.location ? ', ' + c.location : '') + (c.instructor ? ', ' + c.instructor : '') + '. Edit.') + '">' +
-          // Course name is the headline; the code (with section) drops to the small kind line.
-          '<span class="slot-code' + (h < 84 ? ' is-short' : '') + '">' + esc(c.title || c.course) + '</span>' +
-          '<span class="slot-kind">' + KIND_LABEL[c.kind] +
-            (c.title ? ' <span class="slot-sub">· ' + esc(c.course) + '</span>' : '') + '</span>' +
-          (showTime ? '<span class="slot-meta tnum">' + fmtTime(c.start) + '–' + fmtTime(c.end) + '</span>' : '') +
-          (showLoc && c.location ? "<span class=\"slot-meta\">" + esc(c.location) + "</span>" : "") +
-          (h >= 110 && c.instructor ? '<span class="slot-meta">' + esc(c.instructor) + '</span>' : '') +
+        return '<button class="slot" type="button" data-kind="' + c.kind + '" data-day="' + d + '" data-class-id="' + c.id + '" style="top:' + top + 'px;height:' + h + 'px;--edge:' + v.edge + ';--fill:' + v.fill + '"' +
+          ' aria-label="' + esc((c.title ? c.title + ', ' : '') + c.course + ' ' + KIND_LABEL[c.kind] + ', ' + fmtTime(c.start) + ' to ' + fmtTime(c.end) +
+            (c.location ? ', ' + c.location : '') + (c.instructor ? ', ' + c.instructor : '')) + '">' +
+          // full detail — course name is the headline, code drops to the kind line
+          '<span class="slot-d">' +
+            '<span class="slot-code' + (h < 84 ? ' is-short' : '') + '">' + esc(c.title || c.course) + '</span>' +
+            '<span class="slot-kind">' + KIND_LABEL[c.kind] +
+              (c.title ? ' <span class="slot-sub">· ' + esc(c.course) + '</span>' : '') + '</span>' +
+            (showTime ? '<span class="slot-meta tnum">' + fmtTime(c.start) + '–' + fmtTime(c.end) + '</span>' : '') +
+            (showLoc && c.location ? '<span class="slot-meta">' + esc(c.location) + '</span>' : '') +
+            (h >= 110 && c.instructor ? '<span class="slot-meta">' + esc(c.instructor) + '</span>' : '') +
+          '</span>' +
+          // compact label for the zoomed-out week and the blurred side days
+          '<span class="slot-c" aria-hidden="true">' +
+            '<span class="slot-short' + (h >= 52 ? ' can-wrap' : '') + '">' + esc(shortName(c)) + '</span>' +
+            (h >= 38 ? '<span class="slot-ctime tnum">' + clock12(c.start) + '</span>' : '') +
+          '</span>' +
         '</button>';
       }).join('');
       const nowLine = (isToday && nowMin >= lo && nowMin <= hi)
         ? '<div class="now-line" style="top:' + Math.round((nowMin - lo) * ppm) + 'px" aria-hidden="true"></div>' : '';
-      return '<div class="week-col' + (isToday ? ' is-today' : '') + '" style="height:' + colH + 'px">' + slots + nowLine + '</div>';
+      return '<div class="week-col' + (isToday ? ' is-today' : '') + dayState(d, L) + '" data-day="' + d + '" style="height:' + colH + 'px">' + slots + nowLine + '</div>';
     }).join('');
 
-    host.innerHTML = '<div class="week" style="--days:' + activeDays.length + ';--px-per-min:' + ppm + '">' +
+    host.innerHTML = '<div class="week mode-' + L.mode + '" data-days="' + activeDays.join(',') + '" data-phone="' + L.phone + '"' +
+      ' style="--days:' + activeDays.length + ';--px-per-min:' + ppm + ';grid-template-columns:' + weekColumns(activeDays, L) + '">' +
       '<div class="week-corner"></div>' + heads + gutter + cols + '</div>';
     animateNew(host, '.slot', 'data-class-id');
+    syncZoomButton(activeDays.length, L);
   }
 
   function renderScheduleList() {
@@ -495,7 +598,7 @@
     const week = state.settings.scheduleView === 'week';
     $('#schedule-week').hidden = !week;
     $('#schedule-list').hidden = week;
-    if (week) renderWeek(); else renderScheduleList();
+    if (week) renderWeek(); else { renderScheduleList(); syncZoomButton(0, null); }
   }
 
   function renderAll() {
@@ -852,8 +955,42 @@
         state.classes = sampleClasses(); save(); renderAll(); toast('Sample timetable loaded.');
         return;
       }
-      const s = e.target.closest('[data-class-id]');
-      if (s) openClass(state.classes.find((c) => c.id === s.dataset.classId));
+      const head = e.target.closest('.week-dayhead');
+      if (head) {
+        // tap a day to zoom into it; tap the zoomed day again to see the whole week
+        setWeekFocus(head.classList.contains('is-focus') ? null : Number(head.dataset.day));
+        return;
+      }
+      const s = e.target.closest('.slot');
+      if (!s) return;
+      const week = s.closest('.week');
+      const compact = week && (week.classList.contains('mode-fit') || s.closest('.week-col.is-dim'));
+      if (compact) { setWeekFocus(Number(s.dataset.day)); return; }
+      openClass(state.classes.find((c) => c.id === s.dataset.classId));
+    });
+    $('#btn-zoom').addEventListener('click', () => {
+      const zoomed = ui.weekMode === 'focus';
+      setWeekFocus(zoomed ? null : (ui.focusDay == null ? -1 : ui.focusDay));
+      // bring the grid into view if the button sent you somewhere off-screen
+      const wrap = $('#schedule-week');
+      const r = wrap.getBoundingClientRect();
+      if (r.top < 60 || r.top > window.innerHeight * 0.6) {
+        wrap.scrollIntoView({ block: 'start', behavior: M.ok() ? 'smooth' : 'auto' });
+      }
+    });
+
+    // phone <-> desktop layout, or a big height change (rotation): rebuild so the week still fits
+    const onViewportChange = () => { if (!$('#schedule-week').hidden) renderSchedule(); };
+    if (phoneMq.addEventListener) phoneMq.addEventListener('change', onViewportChange);
+    else if (phoneMq.addListener) phoneMq.addListener(onViewportChange);
+    let resizeT;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeT);
+      resizeT = setTimeout(() => {
+        const week = $('#schedule-week .week');
+        const layoutChanged = week && week.dataset.phone !== String(phoneMq.matches);
+        if (layoutChanged || (phoneMq.matches && Math.abs(window.innerHeight - lastFitHeight) > 120)) onViewportChange();
+      }, 200);
     });
     $('#schedule-list').addEventListener('click', (e) => {
       const card = e.target.closest('[data-class-id]'); if (!card) return;

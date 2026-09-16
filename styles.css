@@ -508,6 +508,63 @@ section[role="tabpanel"]:focus { outline: none; }
 .slot-sub { text-transform: none; letter-spacing: 0; font-weight: 550; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
 .slot-meta { font-size: 12px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---- week zoom: mode-normal (desktop overview) / mode-fit (phone overview) / mode-focus ---- */
+.week-wrap { scroll-margin-top: calc(var(--header-h) + 12px); }
+.week {
+  transition: grid-template-columns var(--m-spring-dur, 420ms) var(--m-spring, cubic-bezier(.34, 1.4, .64, 1));
+}
+.week.mode-normal { min-width: calc(60px + var(--days, 5) * 140px); }
+
+button.week-dayhead {
+  font: inherit; color: inherit; text-align: left; width: 100%; min-width: 0;
+  border-top: 0; border-right: 0; margin: 0; cursor: pointer;
+  overflow: hidden; white-space: nowrap;
+}
+.week-dayhead .d-name, .week-dayhead .d-n { display: block; overflow: hidden; text-overflow: ellipsis; }
+.week-dayhead:hover .d-name { text-decoration: underline; text-underline-offset: 3px; }
+.week-dayhead:focus-visible { outline-offset: -3px; }
+
+.week-col, .week-dayhead { transition: filter 320ms ease, opacity 320ms ease, background-color 200ms ease; }
+.week.mode-focus .week-col.is-dim,
+.week.mode-focus .week-dayhead.is-dim { filter: blur(1.5px); opacity: .6; }
+.week.mode-focus .week-col.is-dim:hover,
+.week.mode-focus .week-dayhead.is-dim:hover { filter: blur(.6px); opacity: .85; }
+.week.mode-focus .week-dayhead.is-focus { background-color: var(--primary-soft); }
+
+/* compact headers: keep the row height identical so the grid never jumps vertically */
+.week.mode-fit .d-word, .week.mode-fit .d-today,
+.week.mode-focus .is-dim .d-word, .week.mode-focus .is-dim .d-today { display: none; }
+.week.mode-fit .week-dayhead,
+.week.mode-focus .week-dayhead.is-dim { padding-left: 6px; padding-right: 4px; }
+.week.mode-fit .week-corner, .week[data-phone="true"] .week-corner { padding: 0; }
+.week[data-phone="true"] .hour-label { right: 4px; font-size: 10.5px; }
+
+/* slot: full detail and compact label are stacked and crossfade */
+.slot-d { display: flex; flex-direction: column; gap: 1px; min-width: 0;
+  transition: opacity 200ms ease 100ms, visibility 0s linear 0s; }
+.slot-c {
+  position: absolute; inset: 0; padding: 4px 5px 4px 7px;
+  display: flex; flex-direction: column; gap: 0; min-width: 0;
+  opacity: 0; visibility: hidden;
+  transition: opacity 140ms ease, visibility 0s linear 140ms;
+}
+.slot-short { font-size: 12px; font-weight: 750; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slot-short.can-wrap { white-space: normal; overflow-wrap: normal; word-break: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; flex: none; }
+/* side strips while a day is zoomed: too narrow to wrap, keep a single clipped line */
+.week.mode-focus .week-col.is-dim .slot-short { display: block; white-space: nowrap; text-overflow: clip; -webkit-line-clamp: unset; }
+.week.mode-focus .week-col.is-dim .slot-ctime { display: none; }
+.week.mode-focus .week-col.is-dim .slot-c { padding-left: 5px; padding-right: 2px; }
+.slot-ctime { font-size: 11px; line-height: 1.25; color: var(--fg-muted); white-space: nowrap; overflow: hidden; }
+.week.mode-fit .slot-c,
+.week.mode-focus .week-col.is-dim .slot-c { opacity: 1; visibility: visible; transition: opacity 200ms ease 100ms, visibility 0s; }
+.week.mode-fit .slot-d,
+.week.mode-focus .week-col.is-dim .slot-d { opacity: 0; visibility: hidden; transition: opacity 120ms ease, visibility 0s linear 120ms; }
+.week[data-phone="true"] .slot { left: 2px; right: 2px; padding: 4px 5px; }
+
+.zoom-btn .ic-zoom-out { display: none; }
+.zoom-btn.is-zoomed .ic-zoom-in { display: none; }
+.zoom-btn.is-zoomed .ic-zoom-out { display: inline; }
+
 .now-line { position: absolute; left: 0; right: 0; height: 2px; background: var(--accent); z-index: 4; pointer-events: none; }
 .now-line::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px;
   border-radius: 50%; background: var(--accent); }

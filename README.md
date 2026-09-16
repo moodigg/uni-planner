@@ -48,6 +48,22 @@ days at once and it creates one entry per day.
 - **Day list** — the same data as cards; better on a phone.
 - **Today strip** — today's sessions plus a countdown to the next one.
 
+## Themes
+
+The **Theme** dropdown in the top bar switches the whole look; the sun/moon button
+still flips light/dark inside whichever theme is active. Both choices are saved.
+
+| Theme | Feel |
+|---|---|
+| **Classic** | The original: dark teal, clean cards |
+| **Paper** | Printed planner: ruled paper, serif headings, handwritten labels, highlighter tags, sticky-note timetable |
+| **Glass** | Frosted panels over a slow-moving aurora, cursor spotlight, glowing border while typing |
+
+Motion (all themes) follows the Motion Primitives style — sliding tab/filter
+highlight, staggered blur-in for new items, counting numbers, letter-by-letter
+headings, springy dialogs, magnetic **New** button. It turns itself off when the
+device asks for reduced motion, and data is always saved before any animation runs.
+
 ## Data
 
 The `⋮` menu exports a `.json` backup and imports it back. Do this before
@@ -77,8 +93,10 @@ orange) and the "Accessible & Ethical" style profile:
 ## Files
 
 ```
-index.html   markup, dialogs
-styles.css   design tokens (:root) + components; light theme overrides one block
+index.html   markup, dialogs, theme applied before first paint
+styles.css   Classic tokens + all components
+themes.css   Paper and Glass (light + dark each)
+motion.js    animation layer (no dependencies)
 app.js       state, localStorage, the text parser, rendering
 ```
 

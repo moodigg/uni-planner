@@ -61,10 +61,23 @@
   }
   function fmtDate(d) { return DAYS_SHORT[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()]; }
 
+  /* ---------- motion (motion.js); no-op stand-in if it failed to load ---------- */
+  const M = window.UPMotion || {
+    ok: () => false, enter: () => null, stagger: () => {}, panel: () => null,
+    exit: () => Promise.resolve(), indicator: () => ({ update: () => {} }),
+    countTo: (el, a, b) => { if (el) el.textContent = b; }, textEffect: () => {}, pop: () => {},
+    dialogIn: () => {}, dialogOut: (d) => { if (d && d.open) d.close(); return Promise.resolve(); },
+    magnetic: () => {}, spotlight: () => {}, swap: (fn) => fn()
+  };
+
+  const STYLES = ['classic', 'paper', 'glass'];
+
   /* ---------- state ---------- */
-  const DEFAULTS = { reminders: [], classes: [], settings: { theme: null, scheduleView: 'week' } };
+  const DEFAULTS = { reminders: [], classes: [], settings: { theme: null, style: 'classic', scheduleView: 'week' } };
   let state = load();
   let ui = { tab: 'reminders', filter: 'all', query: '', showDone: false, editing: null, editingClass: null };
+  const prevStats = {};
+  const indicators = [];
 
   function load() {
     try {
@@ -261,18 +274,43 @@
     const exams = live.filter((r) => r.type === 'exam' && daysUntil(r) !== null && daysUntil(r) >= 0).length;
     const done = state.reminders.filter((r) => r.done).length;
 
-    $('#stats').innerHTML = [
-      { n: overdue, l: 'Overdue', c: overdue ? 'is-alert' : '' },
-      { n: soon, l: 'Due in 7 days', c: soon ? 'is-warn' : '' },
-      { n: exams, l: 'Exams ahead', c: '' },
-      { n: done, l: 'Completed', c: '' }
-    ].map((s) => '<div class="stat ' + s.c + '"><span class="stat-n">' + s.n + '</span><span class="stat-l">' + s.l + '</span></div>').join('');
+    const stats = [
+      { k: 'overdue', n: overdue, l: 'Overdue', c: overdue ? 'is-alert' : '' },
+      { k: 'soon', n: soon, l: 'Due in 7 days', c: soon ? 'is-warn' : '' },
+      { k: 'exams', n: exams, l: 'Exams ahead', c: '' },
+      { k: 'done', n: done, l: 'Completed', c: '' }
+    ];
+    $('#stats').innerHTML = stats.map((s) =>
+      '<div class="stat ' + s.c + '"><span class="stat-n tnum" data-k="' + s.k + '">' + s.n + '</span><span class="stat-l">' + s.l + '</span></div>').join('');
+    // AnimatedNumber: roll from the previous value (from 0 on first paint)
+    stats.forEach((s) => {
+      const from = prevStats[s.k] == null ? 0 : prevStats[s.k];
+      if (from !== s.n) M.countTo($('.stat-n[data-k="' + s.k + '"]'), from, s.n);
+      prevStats[s.k] = s.n;
+    });
 
     const badge = $('#tab-count-reminders');
     const urgent = overdue + live.filter((r) => daysUntil(r) === 0).length;
+    const grew = urgent > (Number(badge.textContent) || 0);
     badge.hidden = urgent === 0;
     badge.textContent = urgent;
     badge.setAttribute('aria-label', urgent + ' overdue or due today');
+    if (grew && urgent) M.pop(badge);
+  }
+
+  /* Animate only what's new since the last paint of `host`, so re-renders
+     (ticking a box, editing) don't replay the whole list. */
+  const seen = new WeakMap();
+  function animateNew(host, selector, idAttr) {
+    const prev = seen.get(host);
+    const els = $$(selector, host);
+    const ids = new Set(els.map((el) => el.getAttribute(idAttr)));
+    seen.set(host, ids);
+    if (!prev || host.closest('[hidden]')) {
+      return;   // first paint or hidden panel: entrance is handled by revealPanel()
+    }
+    const fresh = els.filter((el) => !prev.has(el.getAttribute(idAttr)));
+    if (fresh.length) M.stagger(fresh, { y: 12, scale: 0.98 });
   }
 
   function renderReminders() {
@@ -280,14 +318,19 @@
     const list = visibleReminders();
     const host = $('#reminder-list');
 
-    if (!state.reminders.length) {
-      host.innerHTML = emptyState(I.bell, 'Nothing captured yet',
-        'Heard a deadline in class? Type it in the box above &mdash; "Exam CS210 sunday ch 3-5" becomes a dated reminder in one keystroke.',
-        'sample-reminders', 'Load a sample week');
-      return;
-    }
-    if (!list.length) {
-      host.innerHTML = emptyState(I.book, 'No matches', 'Nothing matches this filter or search.', '', '');
+    if (!state.reminders.length || !list.length) {
+      const wasEmpty = !!host.querySelector('.empty');
+      const hadRender = seen.has(host);
+      host.innerHTML = !state.reminders.length
+        ? emptyState(I.bell, 'Nothing captured yet',
+            'Heard a deadline in class? Type it in the box above &mdash; "Exam CS210 sunday ch 3-5" becomes a dated reminder in one keystroke.',
+            'sample-reminders', 'Load a sample week')
+        : emptyState(I.book, 'No matches', 'Nothing matches this filter or search.', '', '');
+      animateNew(host, '.card', 'data-id');
+      if (!wasEmpty && hadRender && !host.closest('[hidden]')) {
+        M.enter(host.querySelector('.empty'), { y: 10, scale: 0.98 });
+        M.textEffect(host.querySelector('.empty h3'), { per: 'word' });
+      }
       return;
     }
 
@@ -300,6 +343,7 @@
       groupBlock('Later', g.later) +
       groupBlock('No date set', g.none) +
       (ui.showDone ? groupBlock('Done', g.done) : '');
+    animateNew(host, '.card', 'data-id');
   }
 
   function emptyState(icon, h, p, action, actionLabel) {
@@ -340,7 +384,7 @@
       '<div class="today-rail">' + todays.map((c) => {
         const live = nowMin >= minsOf(c.start) && nowMin < minsOf(c.end);
         const past = nowMin >= minsOf(c.end);
-        return '<div class="today-item' + (live ? ' is-now' : '') + (past ? ' is-past' : '') + '" style="--edge:' + KIND_VARS[c.kind].edge + '">' +
+        return '<div class="today-item' + (live ? ' is-now' : '') + (past ? ' is-past' : '') + '" data-kind="' + c.kind + '" style="--edge:' + KIND_VARS[c.kind].edge + '">' +
           '<span class="today-time tnum">' + fmtTime(c.start) + ' – ' + fmtTime(c.end) + (live ? ' · now' : '') + '</span>' +
           '<span class="today-name">' + esc(c.course) + (c.title ? ' · ' + esc(c.title) : '') + '</span>' +
           '<span class="badge ' + KIND_CLASS[c.kind] + '">' + KIND_LABEL[c.kind] + '</span>' +
@@ -357,6 +401,7 @@
       host.innerHTML = emptyState(I.cal, 'Your timetable is empty',
         'Add each session once &mdash; lecture, lab or tutorial &mdash; with its room and instructor, and the week builds itself.',
         'sample-schedule', 'Load a sample week');
+      animateNew(host, '.slot', 'data-class-id');
       return;
     }
 
@@ -392,7 +437,7 @@
         const h = Math.max(Math.round((minsOf(c.end) - minsOf(c.start)) * ppm), 34);
         const v = KIND_VARS[c.kind];
         const showTime = h >= 66, showLoc = h >= 88;
-        return '<button class="slot" type="button" data-class-id="' + c.id + '" style="top:' + top + 'px;height:' + h + 'px;--edge:' + v.edge + ';--fill:' + v.fill + '"' +
+        return '<button class="slot" type="button" data-kind="' + c.kind + '" data-class-id="' + c.id + '" style="top:' + top + 'px;height:' + h + 'px;--edge:' + v.edge + ';--fill:' + v.fill + '"' +
           ' aria-label="' + esc(c.course + ' ' + KIND_LABEL[c.kind] + ', ' + fmtTime(c.start) + ' to ' + fmtTime(c.end) +
             (c.location ? ', ' + c.location : '') + (c.instructor ? ', ' + c.instructor : '') + '. Edit.') + '">' +
           // Course name is the headline; the code (with section) drops to the small kind line.
@@ -411,12 +456,13 @@
 
     host.innerHTML = '<div class="week" style="--days:' + activeDays.length + ';--px-per-min:' + ppm + '">' +
       '<div class="week-corner"></div>' + heads + gutter + cols + '</div>';
+    animateNew(host, '.slot', 'data-class-id');
   }
 
   function renderScheduleList() {
     const host = $('#schedule-list');
     const cls = sortedClasses();
-    if (!cls.length) { host.innerHTML = ''; return; }
+    if (!cls.length) { host.innerHTML = ''; animateNew(host, '.card', 'data-class-id'); return; }
     const today = new Date().getDay();
 
     host.innerHTML = [0, 1, 2, 3, 4, 5, 6].map((d) => {
@@ -429,7 +475,7 @@
           const meta = ['<span class="meta-txt tnum">' + I.clock + fmtTime(c.start) + ' – ' + fmtTime(c.end) + '</span>'];
           if (c.location) meta.push('<span class="meta-txt">' + I.pin + esc(c.location) + '</span>');
           if (c.instructor) meta.push('<span class="meta-txt">' + I.user + esc(c.instructor) + '</span>');
-          return '<article class="card" style="--edge:' + KIND_VARS[c.kind].edge + '" data-class-id="' + c.id + '">' +
+          return '<article class="card" data-kind="' + c.kind + '" style="--edge:' + KIND_VARS[c.kind].edge + '" data-class-id="' + c.id + '">' +
             '<span class="badge ' + KIND_CLASS[c.kind] + '">' + KIND_LABEL[c.kind] + '</span>' +
             '<div class="card-body">' +
               '<h3 class="card-title">' + esc(c.course) + (c.title ? ' · ' + esc(c.title) : '') + '</h3>' +
@@ -441,6 +487,7 @@
             '</div></article>';
         }).join('') + '</div></section>';
     }).join('');
+    animateNew(host, '.card', 'data-class-id');
   }
 
   function renderSchedule() {
@@ -487,7 +534,8 @@
     f.details.value = r ? (r.details || '') : '';
     const type = r ? r.type : 'assignment';
     $$('input[name="type"]', f).forEach((i) => { i.checked = i.value === type; });
-    $('#reminder-dialog').showModal();
+    const d = $('#reminder-dialog');
+    d.showModal(); M.dialogIn(d);
     setTimeout(() => f.title.focus(), 30);
   }
 
@@ -505,7 +553,8 @@
     f.instructor.value = c ? (c.instructor || '') : '';
     $$('input[name="kind"]', f).forEach((i) => { i.checked = i.value === (c ? c.kind : 'lecture'); });
     $$('input[name="day"]', f).forEach((i) => { i.checked = c ? Number(i.value) === c.day : false; });
-    $('#class-dialog').showModal();
+    const d = $('#class-dialog');
+    d.showModal(); M.dialogIn(d);
     setTimeout(() => f.course.focus(), 30);
   }
 
@@ -520,11 +569,17 @@
     if (undoFn) {
       const b = document.createElement('button');
       b.className = 'undo'; b.type = 'button'; b.textContent = 'Undo';
-      b.addEventListener('click', () => { undoFn(); el.remove(); });
+      b.addEventListener('click', () => { undoFn(); dismiss(); });
       el.appendChild(b);
     }
+    let gone = false;
+    function dismiss() {
+      if (gone) return; gone = true;
+      M.exit(el, { y: 8, scale: 0.96, duration: 160 }).then(() => el.remove());
+    }
     region.appendChild(el);
-    setTimeout(() => el.remove(), undoFn ? 7000 : 3500);
+    M.enter(el, { y: 16, scale: 0.96, blur: 4 });
+    setTimeout(dismiss, undoFn ? 7000 : 3500);
   }
 
   /* ============================================================
@@ -554,9 +609,11 @@
   /* ============================================================
      Wiring
      ============================================================ */
-  function switchTab(name) {
+  const TABS = ['reminders', 'schedule'];
+  function switchTab(name, opts) {
+    const from = ui.tab;
     ui.tab = name;
-    ['reminders', 'schedule'].forEach((t) => {
+    TABS.forEach((t) => {
       const tab = $('#tab-' + t), panel = $('#panel-' + t);
       const on = t === name;
       tab.setAttribute('aria-selected', on ? 'true' : 'false');
@@ -565,6 +622,43 @@
     });
     const fab = $('#fab');
     fab.setAttribute('aria-label', name === 'schedule' ? 'Add class' : 'Add reminder');
+    refreshIndicators();
+    if (opts && opts.silent) return;
+    if (from !== name) {
+      const dir = TABS.indexOf(name) > TABS.indexOf(from) ? 1 : -1;
+      if (name === 'schedule') renderSchedule();   // "now" markers may be stale
+      revealPanel(name, dir);
+    }
+  }
+
+  /* entrance for a whole panel: slide the panel, stagger its items, type the headings */
+  function revealPanel(name, dir) {
+    const panel = $('#panel-' + name);
+    if (!panel || panel.hidden) return;
+    M.panel(panel, dir || 0);
+    if (name === 'reminders') {
+      M.stagger($$('.stat', panel), { y: 10, step: 45, blur: 4 });
+      M.stagger($$('#reminder-list .card, #reminder-list .empty', panel), { y: 14, delay: 90 });
+      $$('#reminder-list .group-title', panel).forEach((h, i) => M.textEffect(h, { delay: 60 + i * 70 }));
+    } else {
+      M.enter($('#today-strip'), { y: 10, blur: 4 });
+      M.textEffect($('#today-strip h2'), { delay: 60 });
+      const week = state.settings.scheduleView === 'week';
+      M.stagger($$(week ? '#schedule-week .slot, #schedule-week .empty' : '#schedule-list .card', panel),
+        { y: week ? -6 : 14, scale: week ? 0.96 : 1, step: week ? 28 : 35, delay: 80 });
+      if (!week) $$('#schedule-list .group-title', panel).forEach((h, i) => M.textEffect(h, { delay: 60 + i * 70 }));
+    }
+  }
+
+  function refreshIndicators() { indicators.forEach((ind) => ind.update()); }
+
+  function syncChips(attr, value) {
+    $$('.chip[' + attr + ']').forEach((x) => {
+      const on = x.getAttribute(attr) === value;
+      x.classList.toggle('is-on', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    refreshIndicators();
   }
 
   function applyTheme() {
@@ -572,11 +666,42 @@
       (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
     document.documentElement.setAttribute('data-theme', pref);
     $('#btn-theme').setAttribute('aria-label', pref === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+    applyStyle();
+  }
+
+  function applyStyle() {
+    const style = STYLES.indexOf(state.settings.style) > -1 ? state.settings.style : 'classic';
+    document.documentElement.setAttribute('data-style', style);
+    const sel = $('#style-select');
+    if (sel && sel.value !== style) sel.value = style;
+    // fonts differ per style, so indicator geometry must be re-measured once they land
+    refreshIndicators();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(refreshIndicators);
+    setTimeout(refreshIndicators, 350);
   }
 
   function init() {
     applyTheme();
-    switchTab('reminders');
+    switchTab('reminders', { silent: true });
+    syncChips('data-view', state.settings.scheduleView === 'list' ? 'list' : 'week');
+
+    // AnimatedBackground: sliding indicators behind tabs and chip groups
+    indicators.push(M.indicator($('.tabs'), {
+      items: '.tab', isActive: (el) => el.getAttribute('aria-selected') === 'true', hover: true
+    }));
+    $$('.chips').forEach((g) => indicators.push(M.indicator(g, {
+      items: '.chip', isActive: (el) => el.classList.contains('is-on'), hover: true
+    })));
+
+    // ---- theme dropdown ----
+    const styleSel = $('#style-select');
+    styleSel.value = document.documentElement.getAttribute('data-style') || 'classic';
+    styleSel.addEventListener('change', () => {
+      const next = STYLES.indexOf(styleSel.value) > -1 ? styleSel.value : 'classic';
+      state.settings.style = next;
+      save();
+      M.swap(() => applyStyle());
+    });
 
     // day checkboxes in the class dialog
     $('#c-days').innerHTML = DAYS_SHORT.map((d, i) =>
@@ -598,7 +723,7 @@
     $('#btn-theme').addEventListener('click', () => {
       const cur = document.documentElement.getAttribute('data-theme');
       state.settings.theme = cur === 'dark' ? 'light' : 'dark';
-      save(); applyTheme();
+      save(); M.swap(() => applyTheme());
     });
 
     // ---- data menu ----
@@ -618,7 +743,7 @@
       if (b.dataset.action === 'import') $('#import-file').click();
       if (b.dataset.action === 'wipe') {
         if (confirm('Erase every reminder and class stored in this browser? This cannot be undone.')) {
-          state = structuredClone(DEFAULTS); save(); applyTheme(); renderAll(); toast('All data erased.');
+          state = structuredClone(DEFAULTS); save(); applyTheme(); syncChips('data-view', 'week'); renderAll(); toast('All data erased.');
         }
       }
     });
@@ -658,11 +783,7 @@
     // ---- filters / search ----
     $$('.chip[data-filter]').forEach((c) => c.addEventListener('click', () => {
       ui.filter = c.dataset.filter;
-      $$('.chip[data-filter]').forEach((x) => {
-        const on = x === c;
-        x.classList.toggle('is-on', on);
-        x.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
+      syncChips('data-filter', ui.filter);
       renderReminders();
     }));
     let qt;
@@ -674,13 +795,13 @@
 
     // ---- schedule view toggle ----
     $$('.chip[data-view]').forEach((c) => c.addEventListener('click', () => {
+      if (state.settings.scheduleView === c.dataset.view) return;
       state.settings.scheduleView = c.dataset.view;
-      $$('.chip[data-view]').forEach((x) => {
-        const on = x === c;
-        x.classList.toggle('is-on', on);
-        x.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
+      syncChips('data-view', c.dataset.view);
       save(); renderSchedule();
+      const week = c.dataset.view === 'week';
+      M.stagger($$(week ? '#schedule-week .slot' : '#schedule-list .card'),
+        { y: week ? -6 : 14, scale: week ? 0.96 : 1, step: week ? 24 : 35 });
     }));
 
     // ---- reminder list actions ----
@@ -692,18 +813,36 @@
         save(); renderAll(); toast('Sample week loaded — edit or delete freely.');
         return;
       }
-      const card = e.target.closest('.card'); if (!card) return;
+      const card = e.target.closest('.card'); if (!card || card.dataset.leaving) return;
       const r = state.reminders.find((x) => x.id === card.dataset.id); if (!r) return;
       const act = (e.target.closest('[data-act]') || {}).dataset;
       if (!act) return;
       if (act.act === 'toggle') {
-        r.done = !r.done; save(); renderAll();
+        r.done = !r.done; save();
+        if (r.done && !ui.showDone) {
+          // it's about to disappear from the list: tick first, then let it leave
+          const chk = card.querySelector('.check');
+          chk.setAttribute('aria-pressed', 'true'); M.pop(chk);
+          card.dataset.leaving = '1';
+          if (M.ok()) setTimeout(() => M.exit(card, { x: 24, collapse: true }).then(renderAll), 260);
+          else renderAll();
+        } else {
+          renderAll();
+          const again = $('#reminder-list .card[data-id="' + r.id + '"] .check');
+          if (again) { again.focus(); M.pop(again); }
+        }
       } else if (act.act === 'edit') {
         openReminder(r);
       } else if (act.act === 'delete') {
+        // commit first, animate second: the data is safe even if the tab is closed mid-animation
+        card.dataset.leaving = '1';
         const idx = state.reminders.indexOf(r);
-        state.reminders.splice(idx, 1); save(); renderAll();
-        toast('Deleted “' + r.title + '”', () => { state.reminders.splice(idx, 0, r); save(); renderAll(); });
+        state.reminders.splice(idx, 1); save();
+        toast('Deleted “' + r.title + '”', () => {
+          if (!state.reminders.includes(r)) state.reminders.splice(Math.min(idx, state.reminders.length), 0, r);
+          save(); renderAll();
+        });
+        M.exit(card, { x: -24, collapse: true }).then(renderAll);
       }
     });
 
@@ -721,9 +860,15 @@
       const c = state.classes.find((x) => x.id === card.dataset.classId); if (!c) return;
       const act = (e.target.closest('[data-act]') || {}).dataset;
       if (act && act.act === 'delete-class') {
+        if (card.dataset.leaving) return;
+        card.dataset.leaving = '1';
         const idx = state.classes.indexOf(c);
-        state.classes.splice(idx, 1); save(); renderAll();
-        toast('Removed ' + c.course + ' ' + KIND_LABEL[c.kind], () => { state.classes.splice(idx, 0, c); save(); renderAll(); });
+        state.classes.splice(idx, 1); save();
+        toast('Removed ' + c.course + ' ' + KIND_LABEL[c.kind], () => {
+          if (!state.classes.includes(c)) state.classes.splice(Math.min(idx, state.classes.length), 0, c);
+          save(); renderAll();
+        });
+        M.exit(card, { x: -24, collapse: true }).then(renderAll);
       } else {
         openClass(c);
       }
@@ -731,19 +876,23 @@
     $('#btn-add-class').addEventListener('click', () => openClass(null));
 
     // ---- FAB ----
+    M.magnetic($('#fab'));
+    M.spotlight('.card, .stat, .today-strip');
     $('#fab').addEventListener('click', () => {
       if (ui.tab === 'schedule') openClass(null); else openReminder(null);
     });
 
     // ---- dialog close buttons ----
-    $$('[data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
+    $$('[data-close]').forEach((b) => b.addEventListener('click', () => M.dialogOut(b.closest('dialog'))));
+    $$('dialog').forEach((d) => d.addEventListener('cancel', (e) => { e.preventDefault(); M.dialogOut(d); }));
 
     // ---- reminder form ----
     $('#reminder-form').addEventListener('submit', (e) => {
+      e.preventDefault();
       const f = e.target;
       clearErrors(f);
       const title = f.title.value.trim();
-      if (!title) { e.preventDefault(); showError('r-title', 'Give it a title so you recognise it later.'); return; }
+      if (!title) { showError('r-title', 'Give it a title so you recognise it later.'); return; }
       const data = {
         title: title,
         type: (f.querySelector('input[name="type"]:checked') || {}).value || 'note',
@@ -757,6 +906,7 @@
       } else {
         state.reminders.push(Object.assign({ id: uid(), done: false, createdAt: Date.now() }, data));
       }
+      M.dialogOut($('#reminder-dialog'));
       save(); renderAll();
       toast(ui.editing ? 'Reminder updated.' : 'Reminder added.');
       ui.editing = null;
@@ -765,25 +915,26 @@
       const r = state.reminders.find((x) => x.id === ui.editing);
       if (r && confirm('Delete “' + r.title + '”?')) {
         state.reminders.splice(state.reminders.indexOf(r), 1);
-        save(); renderAll(); $('#reminder-dialog').close(); toast('Deleted.');
+        M.dialogOut($('#reminder-dialog'));
+        save(); renderAll(); toast('Deleted.');
       }
     });
 
     // ---- class form ----
     $('#class-form').addEventListener('submit', (e) => {
+      e.preventDefault();
       const f = e.target;
       clearErrors(f);
       const course = f.course.value.trim().toUpperCase();
-      if (!course) { e.preventDefault(); showError('c-course', 'A course code keeps the grid readable.'); return; }
+      if (!course) { showError('c-course', 'A course code keeps the grid readable.'); return; }
       const days = $$('input[name="day"]:checked', f).map((i) => Number(i.value));
       if (!days.length) {
-        e.preventDefault();
         const p = $('[data-err-for="c-days"]');
         p.innerHTML = I.alert + 'Pick at least one day.'; p.hidden = false;
         return;
       }
       if (minsOf(f.end.value) <= minsOf(f.start.value)) {
-        e.preventDefault(); showError('c-end', 'The end time has to be after the start time.'); return;
+        showError('c-end', 'The end time has to be after the start time.'); return;
       }
       const base = {
         course: course, title: f.title.value.trim(),
@@ -797,6 +948,7 @@
       } else {
         days.forEach((d) => state.classes.push(Object.assign({ id: uid(), day: d }, base)));
       }
+      M.dialogOut($('#class-dialog'));
       save(); renderAll();
       toast(ui.editingClass ? 'Class updated.' : (days.length > 1 ? days.length + ' sessions added.' : 'Class added.'));
       ui.editingClass = null;
@@ -805,7 +957,8 @@
       const c = state.classes.find((x) => x.id === ui.editingClass);
       if (c && confirm('Remove ' + c.course + ' ' + KIND_LABEL[c.kind] + ' on ' + DAYS[c.day] + '?')) {
         state.classes.splice(state.classes.indexOf(c), 1);
-        save(); renderAll(); $('#class-dialog').close(); toast('Class removed.');
+        M.dialogOut($('#class-dialog'));
+        save(); renderAll(); toast('Class removed.');
       }
     });
 
@@ -820,6 +973,7 @@
     });
 
     renderAll();
+    revealPanel('reminders', 0);
     // keep "now" markers honest without re-rendering constantly
     setInterval(() => { if (ui.tab === 'schedule') renderSchedule(); }, 60000);
   }
@@ -842,13 +996,13 @@
       try {
         const p = JSON.parse(fr.result);
         if (!p || (!Array.isArray(p.reminders) && !Array.isArray(p.classes))) throw new Error('shape');
-        if (!confirm('Replace everything currently stored with this backup?')) return;
+        if (!confirm('Replace everything currently stored with this backup?')) { e.target.value = ''; return; }
         state = {
           reminders: (p.reminders || []).map((r) => Object.assign({ id: uid(), createdAt: Date.now(), done: false }, r)),
           classes: (p.classes || []).map((c) => Object.assign({ id: uid() }, c)),
           settings: Object.assign({}, DEFAULTS.settings, p.settings || {})
         };
-        save(); applyTheme(); renderAll(); toast('Backup restored.');
+        save(); applyTheme(); syncChips('data-view', state.settings.scheduleView === 'list' ? 'list' : 'week'); renderAll(); toast('Backup restored.');
       } catch (err) {
         toast('That file is not a Uni Planner backup.');
       }

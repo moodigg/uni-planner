@@ -117,6 +117,11 @@
 /* author rules set display on several of these, so [hidden] needs to win */
 [hidden] { display: none !important; }
 
+/* AU Blue-only pieces stay out of the other themes */
+.au-only { display: none; }
+.stat-ic { display: none; }
+.week-dayhead .d-date { display: none; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {

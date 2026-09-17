@@ -6,7 +6,7 @@
    over quietly, and the new version shows the next time the app opens.
    Your reminders/classes live in localStorage and are never touched here.
    ============================================================ */
-const VERSION = '12';
+const VERSION = '13';
 const SHELL = 'uniplanner-shell-v' + VERSION;
 const FONTS = 'uniplanner-fonts-v1';
 
@@ -15,6 +15,7 @@ const ASSETS = [
   './index.html',
   './styles.css?v=' + VERSION,
   './themes.css?v=' + VERSION,
+  './au.css?v=' + VERSION,
   './motion.js?v=' + VERSION,
   './app.js?v=' + VERSION,
   './manifest.webmanifest',

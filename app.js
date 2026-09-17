@@ -72,12 +72,14 @@
     magnetic: () => {}, spotlight: () => {}, swap: (fn) => fn()
   };
 
-  const STYLES = ['classic', 'paper', 'glass'];
+  const STYLES = ['classic', 'paper', 'glass', 'au'];
+  const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
   /* ---------- state ---------- */
   const DEFAULTS = { reminders: [], classes: [], settings: { theme: null, style: 'classic', scheduleView: 'week' } };
   let state = load();
-  let ui = { tab: 'reminders', filter: 'all', query: '', showDone: false, editing: null, editingClass: null, weekMode: null, focusDay: null };
+  let ui = { tab: 'reminders', filter: 'all', query: '', showDone: false, editing: null, editingClass: null, weekMode: null, focusDay: null, auDay: null };
+  let booted = false;
   const prevStats = {};
   const indicators = [];
 
@@ -283,8 +285,10 @@
       { k: 'exams', n: exams, l: 'Exams ahead', c: '' },
       { k: 'done', n: done, l: 'Completed', c: '' }
     ];
+    const statIcon = { overdue: I.alert, soon: I.clock, exams: I.book, done: I.check };
     $('#stats').innerHTML = stats.map((s) =>
-      '<div class="stat ' + s.c + '"><span class="stat-n tnum" data-k="' + s.k + '">' + s.n + '</span><span class="stat-l">' + s.l + '</span></div>').join('');
+      '<div class="stat ' + s.c + '" data-k="' + s.k + '"><span class="stat-ic" aria-hidden="true">' + statIcon[s.k] + '</span>' +
+      '<span class="stat-n tnum" data-k="' + s.k + '">' + s.n + '</span><span class="stat-l">' + s.l + '</span></div>').join('');
     // AnimatedNumber: roll from the previous value (from 0 on first paint)
     stats.forEach((s) => {
       const from = prevStats[s.k] == null ? 0 : prevStats[s.k];
@@ -432,7 +436,7 @@
   // explicit track list (same shape in every mode) so the browser can animate between them
   function weekColumns(activeDays, L) {
     const big = Math.max(2, Math.round(1.25 * (activeDays.length - 1) * 100) / 100);
-    return (L.phone ? '40px' : '60px') + ' ' + activeDays.map((d) =>
+    return (L.phone ? (isAU() ? '52px' : '40px') : (isAU() ? '76px' : '60px')) + ' ' + activeDays.map((d) =>
       'minmax(0px, ' + (L.mode === 'focus' && d === L.focus ? big : 1) + 'fr)').join(' ');
   }
 
@@ -490,12 +494,18 @@
       return;
     }
 
-    const activeDays = [0, 1, 2, 3, 4, 5, 6].filter((d) => cls.some((c) => c.day === d));
+    const au = isAU();
+    const activeDays = au ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5, 6].filter((d) => cls.some((c) => c.day === d));
     const L = weekLayout(activeDays);
     let lo = Math.min.apply(null, cls.map((c) => minsOf(c.start)));
     let hi = Math.max.apply(null, cls.map((c) => minsOf(c.end)));
     lo = Math.floor(lo / 60) * 60;
     hi = Math.ceil(hi / 60) * 60;
+    if (au) {
+      const nm = new Date().getHours() * 60 + new Date().getMinutes();
+      if (nm < lo && nm >= 6 * 60) lo = Math.floor(nm / 60) * 60;
+      if (nm > hi && nm <= 22 * 60) hi = Math.ceil((nm + 1) / 60) * 60;
+    }
     const total = Math.max(hi - lo, 120);
     // phones: scale the day so the whole grid fits one screen (below the sticky header, above the + button)
     lastFitHeight = window.innerHeight;
@@ -509,8 +519,11 @@
 
     let gutter = '<div class="week-gutter" style="height:' + colH + 'px">';
     for (let m = lo; m < hi; m += 60) {   // the closing hour label would sit on the grid's bottom edge and get clipped
-      gutter += '<span class="hour-label" style="top:' + Math.round((m - lo) * ppm) + 'px">' + fmtTime(pad2(Math.floor(m / 60)) + ':00') + '</span>';
+      if (au && m === lo) continue;
+      const hl = au ? (((Math.floor(m / 60) % 12) || 12) + ' ' + (Math.floor(m / 60) >= 12 ? 'pm' : 'am')) : fmtTime(pad2(Math.floor(m / 60)) + ':00');
+      gutter += '<span class="hour-label" style="top:' + Math.round((m - lo) * ppm) + 'px">' + hl + '</span>';
     }
+    if (au && nowMin >= lo && nowMin <= hi) gutter += '<div class="au-now" style="top:' + Math.round((nowMin - lo) * ppm) + 'px" aria-hidden="true"></div>';
     gutter += '</div>';
 
     const heads = activeDays.map((d) => {
@@ -521,6 +534,7 @@
         ' aria-pressed="' + (st === ' is-focus' ? 'true' : 'false') + '"' +
         ' aria-label="' + DAYS[d] + (isToday ? ', today' : '') + ', ' + n + (n === 1 ? ' session' : ' sessions') + '. Zoom to this day.">' +
         '<span class="d-name">' + DAYS_SHORT[d] + (isToday ? '<span class="d-today"> · today</span>' : '') + '</span>' +
+        '<span class="d-date tnum">' + weekDate(d).getDate() + '</span>' +
         '<span class="d-n tnum"><span class="d-count">' + n + '</span><span class="d-word">' + (n === 1 ? ' session' : ' sessions') + '</span></span>' +
         '</button>';
     }).join('');
@@ -540,9 +554,9 @@
             '<span class="slot-code' + (h < 84 ? ' is-short' : '') + '">' + esc(c.title || c.course) + '</span>' +
             '<span class="slot-kind">' + KIND_LABEL[c.kind] +
               (c.title ? ' <span class="slot-sub">· ' + esc(c.course) + '</span>' : '') + '</span>' +
-            (showTime ? '<span class="slot-meta tnum">' + fmtTime(c.start) + '–' + fmtTime(c.end) + '</span>' : '') +
-            (showLoc && c.location ? '<span class="slot-meta">' + esc(c.location) + '</span>' : '') +
-            (h >= 110 && c.instructor ? '<span class="slot-meta">' + esc(c.instructor) + '</span>' : '') +
+            (showTime ? '<span class="slot-meta slot-time tnum">' + fmtTime(c.start) + '–' + fmtTime(c.end) + '</span>' : '') +
+            ((showLoc || au) && c.location ? '<span class="slot-meta slot-loc">' + esc(c.location) + '</span>' : '') +
+            (h >= 110 && c.instructor ? '<span class="slot-meta slot-inst">' + esc(c.instructor) + '</span>' : '') +
           '</span>' +
           // compact label for the zoomed-out week and the blurred side days
           '<span class="slot-c" aria-hidden="true">' +
@@ -599,6 +613,15 @@
     const week = state.settings.scheduleView === 'week';
     $('#schedule-week').hidden = !week;
     $('#schedule-list').hidden = week;
+    const agenda = $('#au-agenda');
+    if (isAU()) {
+      agenda.hidden = week;
+      $('#au-daystrip').hidden = week;
+      renderAuDaystrip();
+      if (!week) renderAuAgenda();
+    } else {
+      agenda.hidden = true;
+    }
     if (week) renderWeek(); else { renderScheduleList(); syncZoomButton(0, null); }
   }
 
@@ -708,6 +731,7 @@
     renderNextUp();
     renderReminders();
     renderSchedule();
+    renderAu();
     const codes = Array.from(new Set(state.classes.map((c) => c.course).concat(
       state.reminders.map((r) => r.course).filter(Boolean)))).sort();
     $('#course-list').innerHTML = codes.map((c) => '<option value="' + esc(c) + '">').join('');
@@ -758,6 +782,7 @@
     f.end.value = c ? c.end : '09:50';
     f.location.value = c ? (c.location || '') : '';
     f.instructor.value = c ? (c.instructor || '') : '';
+    f.crn.value = c ? (c.crn || '') : '';
     $$('input[name="kind"]', f).forEach((i) => { i.checked = i.value === (c ? c.kind : 'lecture'); });
     $$('input[name="day"]', f).forEach((i) => { i.checked = c ? Number(i.value) === c.day : false; });
     const d = $('#class-dialog');
@@ -816,19 +841,22 @@
   /* ============================================================
      Wiring
      ============================================================ */
-  const TABS = ['reminders', 'schedule'];
+  const TABS = ['reminders', 'schedule', 'alerts', 'more'];
   function switchTab(name, opts) {
+    if (TABS.indexOf(name) < 0 || (!isAU() && (name === 'alerts' || name === 'more'))) name = 'reminders';
     const from = ui.tab;
     ui.tab = name;
     TABS.forEach((t) => {
       const tab = $('#tab-' + t), panel = $('#panel-' + t);
       const on = t === name;
-      tab.setAttribute('aria-selected', on ? 'true' : 'false');
-      tab.tabIndex = on ? 0 : -1;
+      if (tab) { tab.setAttribute('aria-selected', on ? 'true' : 'false'); tab.tabIndex = on ? 0 : -1; }
       panel.hidden = !on;
     });
+    $$('.au-nav-item').forEach((b) => { if (b.dataset.nav === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     const fab = $('#fab');
     fab.setAttribute('aria-label', name === 'schedule' ? 'Add class' : 'Add reminder');
+    $('#au-add').setAttribute('aria-label', name === 'schedule' ? 'Add class' : 'Add reminder');
+    if (name === 'alerts' || name === 'more') renderAu();
     refreshIndicators();
     if (opts && opts.silent) return;
     if (from !== name) {
@@ -843,12 +871,18 @@
     const panel = $('#panel-' + name);
     if (!panel || panel.hidden) return;
     M.panel(panel, dir || 0);
+    if (name === 'alerts' || name === 'more') {
+      M.stagger($$('.au-alert, .au-more-card', panel), { y: 12, step: 40 });
+      return;
+    }
     if (name === 'reminders') {
+      M.stagger($$('.au-class-card', panel), { y: 12, step: 50, blur: 4 });
       M.enter($('#next-up:not([hidden])'), { y: 10, blur: 4 });
       M.stagger($$('.stat', panel), { y: 10, step: 45, blur: 4 });
       M.stagger($$('#reminder-list .card, #reminder-list .empty', panel), { y: 14, delay: 90 });
       $$('#reminder-list .group-title', panel).forEach((h, i) => M.textEffect(h, { delay: 60 + i * 70 }));
     } else {
+      if (isAU() && state.settings.scheduleView !== 'week') M.stagger($$('#au-agenda .au-agenda-row', panel), { y: 12, step: 45 });
       M.enter($('#today-strip'), { y: 10, blur: 4 });
       M.textEffect($('#today-strip h2'), { delay: 60 });
       const week = state.settings.scheduleView === 'week';
@@ -882,6 +916,12 @@
     document.documentElement.setAttribute('data-style', style);
     const sel = $('#style-select');
     if (sel && sel.value !== style) sel.value = style;
+    const sel2 = $('#au-style-select');
+    if (sel2 && sel2.value !== style) sel2.value = style;
+    if (booted) {
+      if (style !== 'au' && (ui.tab === 'alerts' || ui.tab === 'more')) switchTab('reminders', { silent: true });
+      renderAll();
+    }
     // phone status bar / installed-app title bar follows the active theme's background
     const tc = document.querySelector('meta[name="theme-color"]');
     const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
@@ -890,6 +930,25 @@
     refreshIndicators();
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(refreshIndicators);
     setTimeout(refreshIndicators, 350);
+  }
+
+  function changeStyle(value) {
+    const next = STYLES.indexOf(value) > -1 ? value : 'classic';
+    state.settings.style = next;
+    save();
+    M.swap(() => applyStyle());
+    // first time on AU Blue: invite a name + photo for the welcome header
+    if (next === 'au' && !profile().name && !profile().asked) {
+      state.settings.profile = Object.assign(profile(), { asked: true });
+      save();
+      setTimeout(() => { switchTab('more'); toast('Add your name and a photo for the welcome screen.'); setTimeout(() => { const i = $('#au-name-input'); if (i) i.focus(); }, 400); }, 60);
+    }
+  }
+
+  function wipeAll() {
+    if (!confirm('Erase every reminder and class stored in this browser? This cannot be undone.')) return;
+    if (pushState()) disableNotifications(true);
+    state = structuredClone(DEFAULTS); save(); applyTheme(); syncChips('data-view', 'week'); switchTab('reminders', { silent: true }); renderAll(); toast('All data erased.');
   }
 
   function init() {
@@ -908,12 +967,7 @@
     // ---- theme dropdown ----
     const styleSel = $('#style-select');
     styleSel.value = document.documentElement.getAttribute('data-style') || 'classic';
-    styleSel.addEventListener('change', () => {
-      const next = STYLES.indexOf(styleSel.value) > -1 ? styleSel.value : 'classic';
-      state.settings.style = next;
-      save();
-      M.swap(() => applyStyle());
-    });
+    styleSel.addEventListener('change', () => changeStyle(styleSel.value));
 
     // day checkboxes in the class dialog
     $('#c-days').innerHTML = DAYS_SHORT.map((d, i) =>
@@ -955,12 +1009,7 @@
       if (b.dataset.action === 'notify-test') testNotification();
       if (b.dataset.action === 'export') exportData();
       if (b.dataset.action === 'import') $('#import-file').click();
-      if (b.dataset.action === 'wipe') {
-        if (confirm('Erase every reminder and class stored in this browser? This cannot be undone.')) {
-          if (pushState()) disableNotifications(true);
-          state = structuredClone(DEFAULTS); save(); applyTheme(); syncChips('data-view', 'week'); renderAll(); toast('All data erased.');
-        }
-      }
+      if (b.dataset.action === 'wipe') wipeAll();
     });
     $('#import-file').addEventListener('change', importData);
 
@@ -1201,7 +1250,8 @@
         course: course, title: f.title.value.trim(),
         kind: (f.querySelector('input[name="kind"]:checked') || {}).value || 'lecture',
         start: f.start.value, end: f.end.value,
-        location: f.location.value.trim(), instructor: f.instructor.value.trim()
+        location: f.location.value.trim(), instructor: f.instructor.value.trim(),
+        crn: f.crn.value.trim().slice(0, 12)
       };
       if (ui.editingClass) {
         Object.assign(state.classes.find((c) => c.id === ui.editingClass), base, { day: days[0] });
@@ -1237,12 +1287,241 @@
     revealPanel('reminders', 0);
     registerOffline();
     initNotifications();
+    initAu();
+    booted = true;
     // keep "now" markers honest without re-rendering constantly
     setInterval(() => { if (ui.tab === 'schedule') renderSchedule(); }, 60000);
     // Next up counts down in minutes; also refresh the moment you come back to the app
     setInterval(() => { if (!document.hidden) renderNextUp(); }, 30000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) renderNextUp(); });
     window.addEventListener('pageshow', renderNextUp);
+  }
+
+  /* ============================================================
+     AU Blue theme: home header, today cards, agenda, alerts, profile
+     ============================================================ */
+  const isAU = () => document.documentElement.getAttribute('data-style') === 'au';
+  const PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+
+  function profile() { return Object.assign({ name: '', photo: '', asked: false }, state.settings.profile || {}); }
+  function setProfile(patch) { state.settings.profile = Object.assign(profile(), patch); save(); renderAu(); }
+
+  function initialsOf(name) {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '';
+    return (parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase();
+  }
+  function avatarInner() {
+    const pr = profile();
+    if (pr.photo && PHOTO_RE.test(pr.photo)) return '<img src="' + pr.photo + '" alt="">';
+    const ini = initialsOf(pr.name);
+    return ini ? esc(ini) : I.user;
+  }
+
+  function ampm(hhmm) {
+    const m = minsOf(hhmm), h = Math.floor(m / 60);
+    return { t: ((h % 12) || 12) + ':' + pad2(m % 60), s: h >= 12 ? 'PM' : 'AM' };
+  }
+  function durParts(c) {
+    const d = Math.max(0, minsOf(c.end) - minsOf(c.start));
+    return { h: pad2(Math.floor(d / 60)), m: pad2(d % 60) };
+  }
+  // date of weekday `d` in the current week (Sun..Sat)
+  function weekDate(d) {
+    const t = new Date(); t.setHours(0, 0, 0, 0);
+    t.setDate(t.getDate() - t.getDay() + d);
+    return t;
+  }
+
+  function renderAuHome() {
+    const pr = profile();
+    $('#au-name').textContent = pr.name || 'Student';
+    const today = new Date().getDay();
+    const list = sortedClasses().filter((c) => c.day === today);
+    $('#au-today-count').textContent = '(' + list.length + ')';
+    $('#au-today-list').innerHTML = list.length ? list.map((c) => {
+      const a = ampm(c.start), d = durParts(c);
+      return '<button type="button" class="au-class-card" data-class-id="' + c.id + '" aria-label="' +
+          esc((c.title || c.course) + ', ' + fmtTime(c.start) + ' to ' + fmtTime(c.end) + (c.location ? ', ' + c.location : '') + (c.instructor ? ', by ' + c.instructor : '')) + '">' +
+        '<span class="au-cc-when"><span class="au-cc-time">' + a.t + '<small>' + a.s + '</small></span>' +
+        '<span class="au-cc-dur">' + d.h + ' h ' + d.m + ' m</span></span>' +
+        '<span class="au-cc-body"><span class="au-cc-title">' + esc(c.title || c.course) + '</span>' +
+        (c.location ? '<span class="au-cc-room">' + esc(c.location) + '</span>' : '') +
+        (c.instructor ? '<span class="au-cc-by">By ' + esc(c.instructor) + '</span>' : '') + '</span>' +
+      '</button>';
+    }).join('') : '<div class="au-empty-card">No classes today</div>';
+  }
+
+  function renderAuDaystrip() {
+    const host = $('#au-daystrip');
+    if (ui.auDay == null) ui.auDay = new Date().getDay();
+    host.innerHTML = [0, 1, 2, 3, 4, 5, 6].map((d) => {
+      const on = d === ui.auDay;
+      return '<button type="button" class="au-day" role="tab" data-au-day="' + d + '" aria-selected="' + on + '" tabindex="' + (on ? 0 : -1) + '"' +
+        ' aria-label="' + DAYS[d] + ' ' + weekDate(d).getDate() + '">' + DAYS_SHORT[d] + '<b>' + weekDate(d).getDate() + '</b></button>';
+    }).join('');
+  }
+
+  function renderAuAgenda() {
+    const host = $('#au-agenda');
+    if (ui.auDay == null) ui.auDay = new Date().getDay();
+    const day = ui.auDay, date = weekDate(day);
+    const list = sortedClasses().filter((c) => c.day === day);
+    const head = '<div class="au-agenda-cols" aria-hidden="true"><span>Time</span><span class="grow">Course</span>' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v16M3 17l3 3 3-3M12 6h9M12 12h9M12 18h9"/></svg></div>' +
+      '<h2 class="au-agenda-day">' + DAYS[day] + ' ' + date.getDate() + ' ' + MONTH_NAMES[date.getMonth()] + ' <span class="au-count">(' + list.length + ')</span></h2>';
+    host.innerHTML = head + (list.length ? list.map((c) => {
+      const s = ampm(c.start), e = ampm(c.end), d = durParts(c);
+      return '<div class="au-agenda-row">' +
+        '<div class="au-ag-time"><b>' + s.t + ' ' + s.s + '</b><span class="end">' + e.t + ' ' + e.s + '</span><span class="dur">' + d.h + 'h ' + d.m + 'm</span></div>' +
+        '<button type="button" class="au-ag-card" data-class-id="' + c.id + '">' +
+          '<span class="au-ag-title">' + esc(c.title || c.course) + '</span>' +
+          (c.crn ? '<span class="au-ag-crn">CRN: <em>' + esc(c.crn) + '</em></span>' : '') +
+          (c.location ? '<span class="au-ag-room">' + esc(c.location) + '</span>' : '') +
+          (c.instructor ? '<span class="au-ag-by">' + I.user + '<span>By ' + esc(c.instructor) + '</span></span>' : '') +
+        '</button></div>';
+    }).join('') : '<div class="au-empty-card">No classes on ' + DAYS[day] + '</div>');
+  }
+
+  function relWhen(at, now) {
+    const diff = at - now;
+    if (diff <= 60000) return 'now';
+    if (diff < 3600e3) return 'in ' + Math.round(diff / 60000) + 'm';
+    const a = new Date(at), n = new Date(now);
+    const days = Math.round((new Date(a.getFullYear(), a.getMonth(), a.getDate()) - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000);
+    if (days === 0) return 'in ' + Math.round(diff / 3600e3) + 'h';
+    if (days === 1) return 'Tomorrow';
+    return DAYS_SHORT[a.getDay()];
+  }
+
+  // what's coming up: the next alert for each class (within a week) plus deadline alerts
+  function upcomingAlerts(now) {
+    const out = [];
+    state.classes.forEach((c) => {
+      if (!/^\d\d:\d\d$/.test(c.start || '')) return;
+      for (let off = 0; off <= 7; off++) {
+        const day = new Date(now); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() + off);
+        if (day.getDay() !== c.day) continue;
+        const start = day.getTime() + minsOf(c.start) * 60000;
+        if (start <= now) continue;
+        out.push({ at: start - CLASS_LEAD_MIN * 60000, title: 'Class Reminder',
+          body: (c.title || c.course) + ' starts at ' + fmtTime(c.start) + (c.location ? ' in ' + c.location : '') + '.' });
+        break;
+      }
+    });
+    buildPushRules(now).filter((r) => r.kind === 'once').forEach((r) => out.push({ at: r.at, title: r.title, body: r.body }));
+    return out.sort((a, b) => a.at - b.at).slice(0, 20);
+  }
+
+  function renderAuAlerts() {
+    const now = Date.now();
+    const items = upcomingAlerts(now);
+    let html = '';
+    if (!pushState()) {
+      html += '<article class="au-alert"><h3>Notifications are off</h3><p>Turn them on to get these on your phone, even when the app is closed.</p>' +
+        '<button class="btn btn-primary" type="button" data-au-action="notify">Turn on notifications</button></article>';
+    }
+    html += items.length ? items.map((a) => {
+      const soon = a.at - now < 24 * 3600e3;
+      return '<article class="au-alert">' + (soon ? '<span class="au-alert-dot" aria-label="Within 24 hours"></span>' : '') +
+        '<h3>' + esc(a.title) + '</h3><p>' + esc(a.body) + '</p><time>' + relWhen(a.at, now) + '</time></article>';
+    }).join('') : '<p class="au-alerts-empty">Nothing coming up. Add classes or deadlines and they\u2019ll show here.</p>';
+    $('#au-alerts').innerHTML = html;
+    const dot = items.some((a) => a.at - now < 24 * 3600e3);
+    $$('.au-bell-dot').forEach((el) => { el.hidden = !dot; });
+  }
+
+  function renderAuMore() {
+    const pr = profile();
+    const input = $('#au-name-input');
+    if (document.activeElement !== input) input.value = pr.name;
+    $('#au-photo-remove').hidden = !pr.photo;
+    $('#au-style-select').value = document.documentElement.getAttribute('data-style') || 'classic';
+  }
+
+  function renderAu() {
+    if (!isAU()) return;
+    renderAuHome();
+    renderAuAlerts();
+    renderAuMore();
+    const inner = avatarInner();
+    $$('.au-avatar-inner').forEach((el) => { el.innerHTML = inner; });
+    $$('[data-au-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.auView === state.settings.scheduleView)));
+  }
+
+  async function setProfilePhoto(file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type || '')) { toast('Pick an image file (JPG or PNG).'); return; }
+    if (file.size > 25 * 1024 * 1024) { toast('That image is too large.'); return; }
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url; });
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      if (!side) throw new Error('empty image');
+      const size = 256, canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      const data = canvas.toDataURL('image/jpeg', 0.86);
+      if (!PHOTO_RE.test(data)) throw new Error('encode failed');
+      setProfile({ photo: data });
+      toast('Profile photo updated.');
+    } catch (err) {
+      toast("Couldn't read that image. Try a JPG or PNG.");
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function navTo(name) {
+    if (name === 'schedule' && ui.auDay == null) ui.auDay = new Date().getDay();
+    switchTab(name);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+
+  function initAu() {
+    document.addEventListener('click', (e) => {
+      const nav = e.target.closest('[data-nav]');
+      if (nav) { navTo(nav.dataset.nav); return; }
+      const act = e.target.closest('[data-au-action="notify"]');
+      if (act) { enableNotifications(); return; }
+      const card = e.target.closest('.au-class-card, .au-ag-card');
+      if (card) { const c = state.classes.find((x) => x.id === card.dataset.classId); if (c) openClass(c); return; }
+      const dayBtn = e.target.closest('[data-au-day]');
+      if (dayBtn) { ui.auDay = Number(dayBtn.dataset.auDay); renderAuDaystrip(); renderAuAgenda(); M.stagger($$('#au-agenda .au-agenda-row'), { y: 10, step: 40 }); return; }
+      const view = e.target.closest('[data-au-view]');
+      if (view) {
+        if (state.settings.scheduleView === view.dataset.auView) return;
+        state.settings.scheduleView = view.dataset.auView;
+        syncChips('data-view', view.dataset.auView);
+        save(); renderSchedule(); renderAu();
+      }
+    });
+    $('#au-add').addEventListener('click', () => { if (ui.tab === 'schedule') openClass(null); else openReminder(null); });
+    $('#au-name-input').addEventListener('input', (e) => {
+      state.settings.profile = Object.assign(profile(), { name: e.target.value.slice(0, 40) });
+      save();
+      $('#au-name').textContent = profile().name || 'Student';
+      const inner = avatarInner();
+      $$('.au-avatar-inner').forEach((el) => { el.innerHTML = inner; });
+    });
+    $('#au-photo-pick').addEventListener('click', () => $('#au-photo-file').click());
+    $('#au-photo-file').addEventListener('change', (e) => { setProfilePhoto(e.target.files && e.target.files[0]); e.target.value = ''; });
+    $('#au-photo-remove').addEventListener('click', () => { setProfile({ photo: '' }); toast('Photo removed.'); });
+    $('#au-style-select').addEventListener('change', (e) => changeStyle(e.target.value));
+    $('#au-notify').addEventListener('click', () => { if (pushState()) disableNotifications(); else enableNotifications(); });
+    $('#au-notify-test').addEventListener('click', testNotification);
+    $('#au-export').addEventListener('click', exportData);
+    $('#au-import').addEventListener('click', () => $('#import-file').click());
+    $('#au-wipe').addEventListener('click', wipeAll);
+    $('#au-daystrip').addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      ui.auDay = (ui.auDay + (e.key === 'ArrowRight' ? 1 : 6)) % 7;
+      renderAuDaystrip(); renderAuAgenda();
+      const b = $('[data-au-day="' + ui.auDay + '"]'); if (b) b.focus();
+      e.preventDefault();
+    });
   }
 
   /* ---------- offline (sw.js) ---------- */
@@ -1402,8 +1681,9 @@
       toast(perm === 'denied' ? 'Notifications are blocked \u2014 allow them in your browser or phone settings.' : 'Notifications not turned on.');
       return;
     }
-    const item = $('#menu-notify');
+    const item = $('#menu-notify'), auItem = $('#au-notify');
     item.disabled = true; item.textContent = 'Turning on\u2026';
+    if (auItem) { auItem.disabled = true; auItem.textContent = 'Turning on\u2026'; }
     try {
       const sub = await currentSubscription(true);
       const rules = buildPushRules(Date.now());
@@ -1417,6 +1697,7 @@
       toast("Couldn't turn notifications on. Check your internet and try again.");
     } finally {
       item.disabled = false;
+      if (auItem) auItem.disabled = false;
       updateNotifyMenu();
     }
   }
@@ -1451,6 +1732,10 @@
     item.textContent = on ? 'Turn off notifications' : 'Turn on notifications';
     item.setAttribute('aria-pressed', on ? 'true' : 'false');
     test.hidden = !on;
+    const auItem = $('#au-notify'), auTest = $('#au-notify-test');
+    if (auItem) { auItem.textContent = on ? 'Turn off notifications' : 'Turn on notifications'; auItem.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    if (auTest) auTest.hidden = !on;
+    if (isAU()) renderAuAlerts();
   }
 
   function initNotifications() {

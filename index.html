@@ -21,14 +21,15 @@
     try { s = (JSON.parse(localStorage.getItem('uniplanner.v1') || '{}') || {}).settings || {}; } catch (e) {}
     d.setAttribute('data-theme', s.theme === 'light' || s.theme === 'dark' ? s.theme
       : (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
-    d.setAttribute('data-style', s.style === 'paper' || s.style === 'glass' ? s.style : 'classic');
+    d.setAttribute('data-style', s.style === 'paper' || s.style === 'glass' || s.style === 'au' ? s.style : 'classic');
   })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=Caveat:wght@500..700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="styles.css?v=12">
-<link rel="stylesheet" href="themes.css?v=12">
+<link rel="stylesheet" crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=Caveat:wght@500..700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="themes.css?v=13">
+<link rel="stylesheet" href="au.css?v=13">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -60,6 +61,7 @@
         <option value="classic">Classic</option>
         <option value="paper">Paper</option>
         <option value="glass">Glass</option>
+        <option value="au">AU Blue</option>
       </select>
       <svg class="style-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
     </div>
@@ -86,6 +88,17 @@
 <main id="main">
   <!-- ============ REMINDERS ============ -->
   <section id="panel-reminders" role="tabpanel" aria-labelledby="tab-reminders" tabindex="-1">
+    <!-- AU Blue: welcome header + today's classes (hidden in other themes) -->
+    <div class="au-only au-welcome">
+      <div class="au-hello"><span class="au-hello-small">Welcome,</span><span class="au-hello-name" id="au-name">Student</span></div>
+      <button class="au-bell" type="button" data-nav="alerts" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg><span class="au-bell-dot" hidden></span></button>
+      <button class="au-avatar" type="button" data-nav="more" aria-label="Profile and settings"><span class="au-avatar-inner"></span></button>
+    </div>
+    <section class="au-only au-today" aria-labelledby="au-today-h">
+      <div class="au-section-head"><h2 id="au-today-h">Today Schedule <span class="au-count" id="au-today-count">(0)</span></h2><button class="au-link" type="button" data-nav="schedule">View All</button></div>
+      <div class="au-today-list" id="au-today-list"></div>
+    </section>
+
     <button type="button" class="nextup" id="next-up" hidden></button>
 
     <form class="capture" id="capture-form" autocomplete="off">
@@ -127,6 +140,17 @@
 
   <!-- ============ SCHEDULE ============ -->
   <section id="panel-schedule" role="tabpanel" aria-labelledby="tab-schedule" tabindex="-1" hidden>
+    <!-- AU Blue: page header, Agenda/Timeline toggle, day strip, agenda list -->
+    <div class="au-only au-page-head">
+      <h1>Schedule</h1>
+      <button class="au-bell" type="button" data-nav="alerts" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg><span class="au-bell-dot" hidden></span></button>
+      <button class="au-avatar is-small" type="button" data-nav="more" aria-label="Profile and settings"><span class="au-avatar-inner"></span></button>
+    </div>
+    <div class="au-only au-seg" role="group" aria-label="Schedule view">
+      <button type="button" data-au-view="list" aria-pressed="false">Agenda</button>
+      <button type="button" data-au-view="week" aria-pressed="true">Timeline</button>
+    </div>
+    <div class="au-only au-daystrip" id="au-daystrip" role="tablist" aria-label="Day"></div>
     <div id="today-strip" class="today-strip"></div>
 
     <div class="toolbar">
@@ -147,8 +171,95 @@
 
     <div id="schedule-week" class="week-wrap"></div>
     <div id="schedule-list" class="groups" hidden></div>
+    <div id="au-agenda" class="au-only au-agenda" hidden></div>
+  </section>
+
+  <!-- ============ ALERTS (AU Blue) ============ -->
+  <section id="panel-alerts" role="tabpanel" aria-label="Notifications" tabindex="-1" hidden>
+    <button class="au-back" type="button" data-nav="reminders" aria-label="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12H4M10 6l-6 6 6 6"/></svg>
+    </button>
+    <h1 class="au-title">Notifications</h1>
+    <div id="au-alerts"></div>
+  </section>
+
+  <!-- ============ MORE (AU Blue) ============ -->
+  <section id="panel-more" role="tabpanel" aria-label="More" tabindex="-1" hidden>
+    <h1 class="au-title">More</h1>
+
+    <div class="au-more-card">
+      <h2>Profile</h2>
+      <div class="au-profile">
+        <span class="au-avatar" aria-hidden="true"><span class="au-avatar-inner"></span></span>
+        <div class="au-photo-actions">
+          <button class="btn btn-primary" type="button" id="au-photo-pick">Change photo</button>
+          <button class="btn btn-ghost" type="button" id="au-photo-remove" hidden>Remove</button>
+        </div>
+      </div>
+      <div class="au-field">
+        <label for="au-name-input">Your name</label>
+        <input id="au-name-input" type="text" maxlength="40" autocomplete="name" placeholder="e.g. Mohamed Ahmed">
+      </div>
+      <input type="file" id="au-photo-file" accept="image/*" hidden>
+    </div>
+
+    <div class="au-more-card">
+      <h2>Appearance</h2>
+      <div class="au-field">
+        <label for="au-style-select">Theme</label>
+        <select id="au-style-select">
+          <option value="classic">Classic</option>
+          <option value="paper">Paper</option>
+          <option value="glass">Glass</option>
+          <option value="au">AU Blue</option>
+        </select>
+      </div>
+      <p class="au-note">AU Blue is always light.</p>
+    </div>
+
+    <div class="au-more-card">
+      <h2>Notifications</h2>
+      <div class="au-row-btns">
+        <button class="btn btn-primary" type="button" id="au-notify">Turn on notifications</button>
+        <button class="btn btn-ghost" type="button" id="au-notify-test" hidden>Send a test</button>
+      </div>
+    </div>
+
+    <div class="au-more-card">
+      <h2>Your data</h2>
+      <div class="au-row-btns">
+        <button class="btn btn-ghost" type="button" id="au-export">Export backup</button>
+        <button class="btn btn-ghost" type="button" id="au-import">Import backup</button>
+        <button class="btn btn-ghost danger" type="button" id="au-wipe">Erase all data</button>
+      </div>
+    </div>
   </section>
 </main>
+
+<!-- AU Blue bottom tab bar -->
+<nav class="au-only au-nav" aria-label="Main">
+  <button class="au-nav-item" type="button" data-nav="reminders">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H5.5A1.5 1.5 0 0 1 4 19z"/></svg>
+    <span>Home</span>
+  </button>
+  <button class="au-nav-item" type="button" data-nav="schedule">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/><path d="M8.5 13.5h.01M12 13.5h.01M15.5 13.5h.01M8.5 16.8h.01M12 16.8h.01M15.5 16.8h.01" stroke-width="2.2"/></svg>
+    <span>Schedule</span>
+  </button>
+  <span aria-hidden="true"></span>
+  <button class="au-nav-item" type="button" data-nav="alerts">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg>
+    <span>Alerts</span>
+  </button>
+  <button class="au-nav-item" type="button" data-nav="more">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg>
+    <span>More</span>
+  </button>
+  <button class="au-nav-add" type="button" id="au-add" aria-label="Add reminder">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</nav>
+
 
 <button class="fab" id="fab" type="button" aria-label="Add reminder">
   <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -284,6 +395,11 @@
           <input id="c-instructor" name="instructor" type="text" placeholder="Dr. Ahmed Salem">
         </div>
       </div>
+
+      <div class="field">
+        <label for="c-crn">CRN <span class="opt">optional</span></label>
+        <input id="c-crn" name="crn" type="text" inputmode="numeric" maxlength="12" placeholder="12440">
+      </div>
     </div>
 
     <footer class="sheet-foot">
@@ -298,7 +414,7 @@
 <input type="file" id="import-file" accept="application/json,.json" hidden>
 <div class="toast-region" id="toast-region" role="status" aria-live="polite"></div>
 
-<script src="motion.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="motion.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

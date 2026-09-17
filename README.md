@@ -66,7 +66,7 @@ days at once and it creates one entry per day.
 
 ## Themes
 
-The **Theme** dropdown in the top bar switches the whole look; the sun/moon button
+The **Theme** dropdown in the top bar (or **More → Theme** in AU Blue) switches the whole look; the sun/moon button
 still flips light/dark inside whichever theme is active. Both choices are saved.
 
 | Theme | Feel |
@@ -74,6 +74,7 @@ still flips light/dark inside whichever theme is active. Both choices are saved.
 | **Classic** | The original: dark teal, clean cards |
 | **Paper** | Printed planner: ruled paper, serif headings, handwritten labels, highlighter tags, sticky-note timetable |
 | **Glass** | Frosted panels over a slow-moving aurora, cursor spotlight, glowing border while typing |
+| **AU Blue** | Styled after the Ajman University student app (unofficial, no logos): Welcome header with your name + photo, Today Schedule cards, Agenda/Timeline schedule, Notifications screen, bottom tab bar with the orange + button. Light only. |
 
 Motion (all themes) follows the Motion Primitives style — sliding tab/filter
 highlight, staggered blur-in for new items, counting numbers, letter-by-letter
@@ -144,6 +145,7 @@ index.html   markup, dialogs, theme applied before first paint
 styles.css   Classic tokens + all components
 themes.css   Paper and Glass (light + dark each)
 motion.js    animation layer (no dependencies)
+au.css       AU Blue theme (layout + colours)
 sw.js        offline support (service worker)
 manifest.webmanifest, icons/   home-screen app name + icons
 app.js       state, localStorage, the text parser, rendering
